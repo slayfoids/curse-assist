@@ -53,6 +53,8 @@ class AssistController:
         self._tlock = threading.Lock()
         self._target: Optional[Tuple[int, int]] = None
         self._target_at = 0.0
+        self._target_speed = 0.0  # px/s, set by detection, read by movement
+        self._last_trigger = 0.0  # cooldown for the instant trigger click
 
         self._capture = None
         self._capture_key = None
@@ -84,6 +86,18 @@ class AssistController:
         if self._suppressor_started:
             self._suppressor.stop()
             self._suppressor_started = False
+
+    def trigger_click(self) -> None:
+        """Fire a click immediately (bound to the trigger hotkey).
+
+        Instant — no dwell wait. A short cooldown prevents a single key press
+        from registering as several clicks.
+        """
+        now = time.perf_counter()
+        if now - self._last_trigger < 0.05:
+            return
+        self._last_trigger = now
+        cur.click_left()
 
     # --- helpers ---------------------------------------------------------
     def _report(self, exc) -> None:
@@ -170,8 +184,10 @@ class AssistController:
                     capture_origin=origin,
                     scale=scale,
                     use_regions=snap.body_part_detection,
+                    pull_radius=snap.pull_radius,
                 )
                 self._publish(target)
+                self._target_speed = self._tracker.speed()
                 self._state.set("last_target_found", target is not None)
             except Exception as exc:
                 self._report(exc)
@@ -221,6 +237,11 @@ class AssistController:
 
             smoothness = self._state.get("smoothness")
             tau = 0.03 + max(0.0, min(1.0, smoothness)) * 0.22
+            # Adaptive: follow snappier while the target is moving (cuts pursuit
+            # lag) without touching the smooth, precise feel on a static target.
+            sp = self._target_speed
+            if sp > 80.0:
+                tau *= max(0.35, 1.0 - min(0.65, (sp - 80.0) / 900.0))
             cursor_pos = self._glider.step(
                 target_screen=target,
                 dt=dt,
@@ -232,7 +253,7 @@ class AssistController:
                 target_screen=target,
                 radius=self._state.get("click_radius"),
                 dwell_ms=self._state.get("dwell_ms"),
-                auto_click=self._state.get("auto_click_enabled"),
+                auto_click=(self._state.get("click_mode") == "dwell"),
             )
 
             slack = MOVE_DT - (time.perf_counter() - now)

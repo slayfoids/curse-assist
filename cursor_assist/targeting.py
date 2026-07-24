@@ -20,9 +20,9 @@ from .segmentation import contour_points_in_region, segment_regions
 # Velocity-lead tuning: aim ahead by LEAD_S when the target is moving faster than
 # LEAD_DEADZONE px/s. The deadzone means a *static* target gets zero lead, so
 # lead never costs static accuracy (which is the main use case).
-LEAD_S = 0.09
+LEAD_S = 0.055
 LEAD_DEADZONE = 45.0
-LEAD_MAX = 140.0  # cap the lead so a fast flick can't overshoot wildly
+LEAD_MAX = 120.0  # cap the lead so a fast flick can't overshoot wildly
 
 
 class TargetTracker:
@@ -37,6 +37,10 @@ class TargetTracker:
 
     def set_ema(self, ema: float) -> None:
         self._ema = max(0.0, min(1.0, ema))
+
+    def speed(self) -> float:
+        """Current estimated target speed in px/s (0 when static)."""
+        return float(np.hypot(self._vel[0], self._vel[1]))
 
     def reset(self) -> None:
         self._smoothed = None
@@ -53,6 +57,7 @@ class TargetTracker:
         capture_origin: Tuple[int, int],
         scale: float = 1.0,
         use_regions: bool = False,
+        pull_radius: int = 0,
     ) -> Optional[Tuple[int, int]]:
         """Return a smoothed screen-space target, or ``None`` if none found.
 
@@ -80,23 +85,38 @@ class TargetTracker:
         # Cursor expressed in detection coordinates.
         cx = (cursor_screen[0] - ox) * scale
         cy = (cursor_screen[1] - oy) * scale
+        # FOV radius in detection coordinates (0 = unlimited).
+        r_det = pull_radius * scale if pull_radius and pull_radius > 0 else None
 
         if not use_regions:
             # Pick the color blob whose center is nearest the cursor, and aim at
-            # that center. Simple, stable "color magnet".
+            # that center. Simple, stable "color magnet". Only blobs inside the
+            # FOV radius are eligible.
             best = None
             best_d = None
             for s in shapes:
                 bx, by, bw, bh = s.bbox
                 px, py = bx + bw / 2.0, by + bh / 2.0
                 d = (px - cx) ** 2 + (py - cy) ** 2
+                if r_det is not None and d > r_det * r_det:
+                    continue
                 if best_d is None or d < best_d:
                     best_d, best = d, (px, py)
+            if best is None:
+                self._smoothed = None
+                return None
             target_det = best
         else:
             if figure is None:
                 self._smoothed = None
                 return None
+            # Respect the FOV: ignore a figure whose center is out of range.
+            if r_det is not None:
+                fx, fy, fw, fh = figure.bbox
+                fcx, fcy = fx + fw / 2.0, fy + fh / 2.0
+                if (fcx - cx) ** 2 + (fcy - cy) ** 2 > r_det * r_det:
+                    self._smoothed = None
+                    return None
             region_rect = segment_regions(figure.bbox).get(active_region)
             if region_rect is None:
                 self._smoothed = None
@@ -128,20 +148,31 @@ class TargetTracker:
             dt = now - self._prev_t
             if dt > 1e-3:
                 inst = (raw - self._prev_raw) / dt
-                self._vel = 0.75 * self._vel + 0.25 * inst
+                # Heavy velocity smoothing: keeps prediction stable at low fps
+                # (noisy per-frame deltas won't cause overshoot spikes).
+                self._vel = 0.85 * self._vel + 0.15 * inst
         self._prev_raw = raw
         self._prev_t = now
+
+        speed = float(np.hypot(self._vel[0], self._vel[1]))
+
+        # Adaptive follow: track a moving target a bit faster (less position
+        # lag), but stay gentle when static so aim is rock-steady and precise.
+        # Kept mild to avoid oscillation on curved paths / low frame rates.
+        ema_eff = self._ema
+        if speed > 250:
+            ema_eff = min(0.65, self._ema + 0.18)
+        elif speed > 80:
+            ema_eff = min(0.6, self._ema + 0.1)
 
         if self._smoothed is None:
             self._smoothed = raw.copy()
         else:
-            a = self._ema
-            self._smoothed = a * raw + (1.0 - a) * self._smoothed
+            self._smoothed = ema_eff * raw + (1.0 - ema_eff) * self._smoothed
 
         # Lead the target when it's actually moving (zero lead when static, so
         # static aim stays pixel-accurate).
         out = self._smoothed
-        speed = float(np.hypot(self._vel[0], self._vel[1]))
         if speed > LEAD_DEADZONE:
             lead = self._vel * LEAD_S
             n = float(np.hypot(lead[0], lead[1]))

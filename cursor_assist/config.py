@@ -47,8 +47,8 @@ class ColorTarget:
 class CaptureConfig:
     """Where and how frames are grabbed from."""
 
-    # "obs" reads the OBS virtual cam (default/recommended); "screen" uses mss.
-    source: str = "obs"
+    # "screen" uses mss desktop capture (default); "obs" reads the virtual cam.
+    source: str = "screen"
     # Screen region in absolute desktop pixels. width/height == 0 means full monitor.
     left: int = 0
     top: int = 0
@@ -66,17 +66,20 @@ class AppState:
 
     # --- Master switches -------------------------------------------------
     pull_enabled: bool = False       # toggled by hotkey / button
-    auto_click_enabled: bool = True  # dwell-click master enable
+    auto_click_enabled: bool = True  # (legacy) dwell-click master enable
+    # How clicks fire: "dwell" (auto after hovering), "trigger" (press the
+    # trigger key to click instantly), or "off" (manual clicks only).
+    click_mode: str = "dwell"
 
     # --- Pull / movement tuning -----------------------------------------
     # Motion is time-based and frame-rate independent (see controller). These
     # tune *feel*, not per-frame steps, so it stays smooth regardless of FPS.
-    smoothness: float = 0.25         # 0 = snappy .. 1 = very smooth (glide)
-    max_speed: int = 5500            # px/second cap (stops overshoot on jumps)
+    smoothness: float = 0.22         # 0 = snappy .. 1 = very smooth (glide)
+    max_speed: int = 7000            # px/second cap (stops overshoot on jumps)
     target_ema: float = 0.45         # smoothing applied to the *target* point
 
     # --- Dwell click -----------------------------------------------------
-    dwell_ms: int = 600              # 200 - 1500 ms
+    dwell_ms: int = 300              # how long to hold on target before click
     click_radius: int = 25           # px radius the cursor must hold within
 
     # --- Detection -------------------------------------------------------
@@ -102,12 +105,19 @@ class AppState:
     # --- Capture ---------------------------------------------------------
     capture: CaptureConfig = field(default_factory=CaptureConfig)
 
+    # --- Field of view / overlay ----------------------------------------
+    # Only assist toward colors within this many px of the cursor (0 = no
+    # limit). Drawn on screen as the crosshair circle.
+    pull_radius: int = 250
+    show_overlay: bool = True        # draw the FOV circle over the cursor
+
     # --- Input control ---------------------------------------------------
     suppress_mouse: bool = False     # block physical mouse movement while pulling
 
     # --- Hotkeys (editable/recordable in the panel; `keyboard` syntax) ----
     hotkey_show_panel: str = "right shift"  # show/hide the settings panel
     hotkey_toggle_pull: str = "f8"          # turn the pull assist on/off
+    hotkey_trigger: str = "right ctrl"      # instant click (in "trigger" mode)
 
     # --- Loop status (loop -> GUI, read-only for the GUI) ----------------
     loop_fps: float = 0.0

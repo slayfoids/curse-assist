@@ -25,6 +25,8 @@ def _parse_args(argv=None) -> argparse.Namespace:
                    help="Port for the local web UI (default 8756).")
     p.add_argument("--no-browser", action="store_true",
                    help="Don't auto-open the browser; just print the URL.")
+    p.add_argument("--no-overlay", action="store_true",
+                   help="Don't draw the on-screen FOV crosshair overlay.")
     # Defaults are None so we can tell an explicit flag from an omitted one and
     # only override the persisted settings when the user actually passed it.
     p.add_argument("--source", choices=["screen", "obs"], default=None,
@@ -45,6 +47,17 @@ def main(argv=None) -> int:
               "Windows.", file=sys.stderr)
         return 2
 
+    # Make the process DPI-aware so cursor/capture/overlay all agree on physical
+    # pixels (otherwise coordinates drift on scaled displays).
+    try:
+        import ctypes
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
     args = _parse_args(argv)
     state = AppState()
     persistence.load(state)  # saved settings first...
@@ -63,10 +76,21 @@ def main(argv=None) -> int:
     if args.tk:
         from .gui import ControlPanel
         ControlPanel(state, load_settings=False).run()
-    else:
+    elif args.no_overlay:
         from .webserver import WebApp
         WebApp(state, port=args.port,
                open_browser=not args.no_browser).serve_blocking()
+    else:
+        # Web UI in background threads; the crosshair overlay owns the main
+        # thread (Tkinter requirement).
+        from .webserver import WebApp
+        from .overlay import CrosshairOverlay
+        app = WebApp(state, port=args.port, open_browser=not args.no_browser)
+        app.start()
+        try:
+            CrosshairOverlay(state, quit_event=app.quit_event).run()
+        finally:
+            app.stop()
     return 0
 
 

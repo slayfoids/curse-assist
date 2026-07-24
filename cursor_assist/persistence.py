@@ -33,10 +33,14 @@ _SCALAR_FIELDS = (
     "roi_h",
     "body_part_detection",
     "active_region",
+    "pull_radius",
+    "show_overlay",
     "auto_click_enabled",
+    "click_mode",
     "suppress_mouse",
     "hotkey_show_panel",
     "hotkey_toggle_pull",
+    "hotkey_trigger",
 )
 
 

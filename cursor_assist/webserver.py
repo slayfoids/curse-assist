@@ -67,6 +67,8 @@ class WebApp:
         self._eyedrop_thread: Optional[threading.Thread] = None
         self._hotkey_handles: list = []
         self._httpd: Optional[ThreadingHTTPServer] = None
+        self.quit_event = threading.Event()  # set when the app is shutting down
+        self._stopped = False
 
     # ------------------------------------------------------------------ run
     def start(self) -> None:
@@ -95,12 +97,16 @@ class WebApp:
             self.stop()
 
     def stop(self) -> None:
+        if self._stopped:
+            return
+        self._stopped = True
+        self.quit_event.set()  # lets the overlay/main thread exit
         try:
             self.controller.stop()
         finally:
             self._clear_hotkeys()
             if self._httpd:
-                self._httpd.shutdown()
+                threading.Thread(target=self._httpd.shutdown, daemon=True).start()
             if getattr(self, "_shutdown", None):
                 self._shutdown.set()
 
@@ -183,6 +189,11 @@ class WebApp:
                 self.state.get("hotkey_toggle_pull"),
                 lambda: self.state.set("pull_enabled",
                                        not self.state.get("pull_enabled"))))
+            # Instant-click trigger key, only while in "trigger" click mode.
+            trig = self.state.get("hotkey_trigger")
+            if self.state.get("click_mode") == "trigger" and trig:
+                self._hotkey_handles.append(keyboard.add_hotkey(
+                    trig, self.controller.trigger_click))
         except Exception:
             pass
 
@@ -212,6 +223,7 @@ class WebApp:
             return {
                 "pull_enabled": s.pull_enabled,
                 "auto_click_enabled": s.auto_click_enabled,
+                "click_mode": s.click_mode,
                 "smoothness": s.smoothness,
                 "max_speed": s.max_speed,
                 "target_ema": s.target_ema,
@@ -223,6 +235,8 @@ class WebApp:
                 "roi_x": s.roi_x, "roi_y": s.roi_y,
                 "roi_w": s.roi_w, "roi_h": s.roi_h,
                 "detect_thin_border": s.detect_thin_border,
+                "pull_radius": s.pull_radius,
+                "show_overlay": s.show_overlay,
                 "suppress_mouse": s.suppress_mouse,
                 "body_part_detection": s.body_part_detection,
                 "active_region": s.active_region,
@@ -237,6 +251,7 @@ class WebApp:
                 },
                 "hotkey_show_panel": s.hotkey_show_panel,
                 "hotkey_toggle_pull": s.hotkey_toggle_pull,
+                "hotkey_trigger": s.hotkey_trigger,
                 "fps": s.loop_fps,
                 "target_found": s.last_target_found,
                 "eyedropping": self._eyedropping,
@@ -263,6 +278,9 @@ class WebApp:
             except (TypeError, ValueError):
                 return
             setattr(self.state, name, value)
+        # Changing the click mode changes whether the trigger key is bound.
+        if name == "click_mode":
+            self._register_hotkeys()
         self._save()
 
     def do_action(self, data: dict):
@@ -314,6 +332,8 @@ class WebApp:
             self.state.set("hotkey_show_panel",
                            data.get("show") or "right shift")
             self.state.set("hotkey_toggle_pull", data.get("pull") or "f8")
+            if data.get("trigger") is not None:
+                self.state.set("hotkey_trigger", data.get("trigger") or "")
             self._register_hotkeys()
         elif action == "record_hotkey":
             hk = self._record_hotkey()

@@ -51,6 +51,9 @@ class VMouse:
 
 vm = VMouse()
 _tgt = {"x": W / 2.0, "y": H / 2.0}
+# Simulated camera frame rate (OBS virtual cam is typically 30/60). grab()
+# throttles to this so detection runs at a realistic rate, not an ideal 240.
+_cam = {"fps": 60, "last": 0.0}
 
 
 def _get_pos():
@@ -75,6 +78,13 @@ class FakeCapture:
     origin = (0, 0)
 
     def grab(self):
+        # Throttle to the simulated capture rate so detection sees realistic
+        # frame timing (screen capture is typically ~60+ fps).
+        period = 1.0 / max(1, _cam["fps"])
+        wait = _cam["last"] + period - time.perf_counter()
+        if wait > 0:
+            time.sleep(wait)
+        _cam["last"] = time.perf_counter()
         f = np.zeros((H, W, 3), np.uint8)
         cv2.circle(f, (int(_tgt["x"]), int(_tgt["y"])), RADIUS, TARGET_BGR, -1)
         return f
@@ -101,6 +111,8 @@ def make_state(smoothness, max_speed, ema):
         st.max_speed = max_speed
         st.target_ema = ema
         st.auto_click_enabled = False
+        st.click_mode = "off"  # measure aim only; don't fire clicks
+        st.pull_radius = 0     # no FOV limit — measure raw aim accuracy
         st.detect_scale = 0.5
         st.pull_enabled = True
     return st
@@ -132,26 +144,29 @@ def run_static(st, trials=8, dur=1.3):
     return finals, settles
 
 
-def run_tracking(st, dur=5.0):
+def run_tracking(st, dur=5.0, period=4.0):
+    """Target circles the screen; `period` seconds per lap (smaller = faster)."""
     c = ctrl.AssistController(st)
     c.start()
     errs = []
-    _tgt["x"], _tgt["y"] = W / 2 + 220, H / 2
+    rx, ry = 240, 160
+    _tgt["x"], _tgt["y"] = W / 2 + rx, H / 2
     vm.x, vm.y = W / 2, H / 2
+    peak = 2 * math.pi * max(rx, ry) / period  # px/s at the fastest point
     t0 = time.perf_counter()
     try:
         while True:
             t = time.perf_counter() - t0
             if t >= dur:
                 break
-            _tgt["x"] = W / 2 + 220 * math.cos(2 * math.pi * t / 4.0)
-            _tgt["y"] = H / 2 + 150 * math.sin(2 * math.pi * t / 4.0)
+            _tgt["x"] = W / 2 + rx * math.cos(2 * math.pi * t / period)
+            _tgt["y"] = H / 2 + ry * math.sin(2 * math.pi * t / period)
             if t > 1.2:  # after initial acquisition
                 errs.append(math.hypot(vm.x - _tgt["x"], vm.y - _tgt["y"]))
             time.sleep(0.004)
     finally:
         c.stop()
-    return errs
+    return errs, peak
 
 
 def _pct(xs, p):
@@ -159,29 +174,35 @@ def _pct(xs, p):
     return xs[min(len(xs) - 1, int(p / 100 * len(xs)))]
 
 
-def report(name, smoothness, max_speed, ema):
+def report(name, smoothness, max_speed, ema, fps):
+    _cam["fps"] = fps
     print(f"\n=== {name}  (smoothness={smoothness}, max_speed={max_speed}, "
-          f"steadiness={ema}) ===")
+          f"steadiness={ema}, capture={fps}fps) ===")
     finals, settles = run_static(make_state(smoothness, max_speed, ema))
     good_settles = [s for s in settles if not math.isnan(s)]
-    print(f"  STATIC  final error px: mean={statistics.mean(finals):.2f}  "
+    print(f"  STATIC   final error px: mean={statistics.mean(finals):.2f}  "
           f"median={statistics.median(finals):.2f}  max={max(finals):.2f}")
-    print(f"          settle<3px: {len(good_settles)}/{len(settles)} trials, "
+    print(f"           settle<3px: {len(good_settles)}/{len(settles)} trials, "
           f"mean {statistics.mean(good_settles):.2f}s" if good_settles
-          else "          settle<3px: none reached")
-    errs = run_tracking(make_state(smoothness, max_speed, ema))
-    print(f"  TRACK   moving-target error px: mean={statistics.mean(errs):.1f}  "
-          f"p95={_pct(errs, 95):.1f}  max={max(errs):.1f}")
+          else "           settle<3px: none reached")
+    for per, label in ((6.0, "slow"), (2.5, "fast")):
+        errs, peak = run_tracking(make_state(smoothness, max_speed, ema),
+                                  period=per)
+        print(f"  TRACK {label:<4} (~{peak:.0f} px/s): mean="
+              f"{statistics.mean(errs):.1f}  p95={_pct(errs, 95):.1f}  "
+              f"max={max(errs):.1f}")
     return statistics.mean(finals), max(finals)
 
 
 def main():
     print(f"Aim simulation on a {W}x{H} virtual screen, target r={RADIUS}px.")
-    # Default feel, and a snappier "strong aim" preset.
-    m1, mx1 = report("DEFAULT", 0.25, 5500, 0.45)
-    m2, mx2 = report("STRONG (snappy)", 0.12, 8000, 0.7)
+    # Screen capture (the mode actually used) at realistic frame rates.
+    m1, mx1 = report("DEFAULT", 0.22, 7000, 0.45, fps=60)
+    m2, mx2 = report("DEFAULT @30fps", 0.22, 7000, 0.45, fps=30)
+    m3, mx3 = report("STRONG (snappy)", 0.12, 8000, 0.7, fps=60)
 
-    ok = m1 <= 2.5 and mx1 <= 5.0 and m2 <= 2.5 and mx2 <= 5.0
+    ok = all(m <= 2.5 for m in (m1, m2, m3)) and all(
+        mx <= 5.0 for mx in (mx1, mx2, mx3))
     print(f"\nRESULT: {'PASS' if ok else 'FAIL'} "
           f"(static mean must be <=2.5px and max <=5px)")
     return 0 if ok else 1

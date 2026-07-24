@@ -162,15 +162,32 @@ PAGE = r"""<!doctype html>
   </div>
 
   <div class="card" style="animation-delay:.1s"><h2>Click</h2>
-    <div class="toggle"><span>Auto dwell-click</span>
-      <label class="switch"><input type="checkbox" data-key="auto_click_enabled">
-      <span class="track"></span></label></div>
-    <div class="row"><label>Dwell time</label>
-      <input type="range" data-key="dwell_ms" min="200" max="1500" step="50">
+    <div class="seg" id="clickmode">
+      <button data-mode="dwell">Dwell</button>
+      <button data-mode="trigger">Trigger key</button>
+      <button data-mode="off">Off</button>
+    </div>
+    <div class="row" id="dwellRow"><label>Dwell time</label>
+      <input type="range" data-key="dwell_ms" min="50" max="1500" step="25">
       <span class="val"></span></div>
     <div class="row"><label>Click radius</label>
       <input type="range" data-key="click_radius" min="5" max="80" step="1">
       <span class="val"></span></div>
+    <div class="hk" id="triggerRow"><label>Trigger key</label>
+      <input class="txt" id="hk_trigger" style="width:auto">
+      <button class="btn" onclick="record('trigger')">Record</button></div>
+    <div class="hint" id="clickHint"></div>
+  </div>
+
+  <div class="card" style="animation-delay:.13s"><h2>Field of view</h2>
+    <div class="toggle"><span>Show crosshair circle</span>
+      <label class="switch"><input type="checkbox" data-key="show_overlay">
+      <span class="track"></span></label></div>
+    <div class="row"><label>Pull radius</label>
+      <input type="range" data-key="pull_radius" min="0" max="1000" step="10">
+      <span class="val"></span></div>
+    <div class="hint">Only assist toward colors within this circle around the
+      cursor (0 = whole screen).</div>
   </div>
 
   <div class="card" style="animation-delay:.15s"><h2>Target colors</h2>
@@ -200,10 +217,10 @@ PAGE = r"""<!doctype html>
     <div class="hint" id="regionHint"></div>
   </div>
 
-  <div class="card" style="animation-delay:.25s"><h2>Capture source</h2>
+  <div class="card" style="animation-delay:.25s"><h2>Capture source (screen recommended)</h2>
     <div class="seg" id="seg">
-      <button data-src="obs">OBS cam</button>
       <button data-src="screen">Screen</button>
+      <button data-src="obs">OBS cam</button>
     </div>
     <div class="fields">
       <span class="lbl">Monitor</span><input class="txt" id="cap_monitor" style="width:48px">
@@ -280,6 +297,8 @@ $$('input[type=checkbox][data-key]').forEach(el=>{
 $('#picker').addEventListener('change',e=>act('add_color',{hex:e.target.value}).then(load));
 // capture source segmented
 $$('#seg button').forEach(b=>b.onclick=()=>act('set_source',{source:b.dataset.src}).then(load));
+// click-mode segmented
+$$('#clickmode button').forEach(b=>b.onclick=()=>setKey('click_mode',b.dataset.mode).then(load));
 // remember focus so polling doesn't stomp typed text
 $$('input.txt').forEach(el=>{el.addEventListener('focus',()=>focused=el);
   el.addEventListener('blur',()=>{if(focused===el)focused=null;});});
@@ -294,11 +313,14 @@ function applyRoi(){act('apply_roi',{
   roi_x:+$('#roi_x').value||0, roi_y:+$('#roi_y').value||0,
   roi_w:+$('#roi_w').value||0, roi_h:+$('#roi_h').value||0}).then(()=>flash('detection area applied'));}
 function clearRoi(){['roi_x','roi_y','roi_w','roi_h'].forEach(id=>$('#'+id).value=0);applyRoi();}
-function applyHotkeys(){act('apply_hotkeys',{show:$('#hk_show').value.trim(),pull:$('#hk_pull').value.trim()})
+function applyHotkeys(){act('apply_hotkeys',{show:$('#hk_show').value.trim(),
+  pull:$('#hk_pull').value.trim(), trigger:$('#hk_trigger').value.trim()})
   .then(()=>flash('hotkeys applied'));}
-async function record(which){flash('press a key or combo…');
+async function record(which){flash('press any key or combo…');
   const r=await act('record_hotkey');
-  if(r&&r.hotkey){(which==='show'?$('#hk_show'):$('#hk_pull')).value=r.hotkey;applyHotkeys();}
+  if(r&&r.hotkey){
+    const el=which==='show'?$('#hk_show'):which==='trigger'?$('#hk_trigger'):$('#hk_pull');
+    el.value=r.hotkey;applyHotkeys();flash('bound: '+r.hotkey);}
   else flash("recording needs the 'keyboard' package");}
 function quit(){act('quit');flash('quitting — you can close this tab');}
 
@@ -329,6 +351,14 @@ function render(){
   if(!dragging&&S.error){/*keep*/}
   // segmented + region
   $$('#seg button').forEach(b=>b.classList.toggle('sel',b.dataset.src===(S.capture||{}).source));
+  // click mode
+  const cm=S.click_mode||'dwell';
+  $$('#clickmode button').forEach(b=>b.classList.toggle('sel',b.dataset.mode===cm));
+  $('#dwellRow').style.display=(cm==='dwell')?'':'none';
+  $('#triggerRow').style.display=(cm==='trigger')?'':'none';
+  $('#clickHint').textContent=cm==='dwell'?'Clicks after holding on target.':
+    cm==='trigger'?'Press the trigger key to click instantly.':
+    'No auto-click — click manually.';
   renderRegions();renderColors();
   if(S.eyedropping) flash('Eyedropper armed — click any pixel on screen (Esc cancels)');
 }
@@ -341,6 +371,7 @@ function fillStatic(){
   set('#cap_left',c.left);set('#cap_top',c.top);set('#cap_width',c.width);set('#cap_height',c.height);
   set('#roi_x',S.roi_x);set('#roi_y',S.roi_y);set('#roi_w',S.roi_w);set('#roi_h',S.roi_h);
   set('#hk_show',S.hotkey_show_panel);set('#hk_pull',S.hotkey_toggle_pull);
+  set('#hk_trigger',S.hotkey_trigger);
 }
 async function load(){S=await fetch('/api/state').then(r=>r.json());fillStatic();render();}
 async function poll(){try{S=await fetch('/api/state').then(r=>r.json());

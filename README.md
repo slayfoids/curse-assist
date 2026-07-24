@@ -100,12 +100,13 @@ Everything is exposed and **persists between runs** (saved to
 `%LOCALAPPDATA%\CursorAssist\settings.json`). **Press Right Shift** any time to
 re-open/focus the panel tab.
 
-Cards: **Motion** (smoothness, max speed, target steadiness) · **Click** (auto
-dwell-click, dwell time, radius) · **Target colors** (multiple colors, picker,
+Cards: **Motion** (smoothness, max speed, target steadiness) · **Click** (mode:
+dwell/trigger/off, dwell time, radius, trigger key) · **Field of view** (pull
+radius + crosshair circle) · **Target colors** (multiple colors, picker,
 eyedropper, sensitivity, min area, thin-outline) · **Target region** (six
-buttons) · **Capture source** (OBS/Screen, monitor, region, OBS index, detail) ·
+buttons) · **Capture source** (Screen/OBS, monitor, region, index, detail) ·
 **Detection area** (pixel ROI to search within) · **Input control** (block my
-mouse) · **Hotkeys** (both rebindable, with Record).
+mouse) · **Hotkeys** (all rebindable, with Record).
 
 ## How to use it
 
@@ -121,7 +122,9 @@ mouse) · **Hotkeys** (both rebindable, with Record).
 5. Move roughly toward the target; the cursor glides the rest of the way. Hold
    near it and, after the **Dwell time**, a click fires automatically.
 
-Turn **Auto dwell-click** off to keep the pull assist but click manually.
+Set **Click mode** to *Trigger key* for an instant click on a key press, or *Off*
+to click manually. The on-screen **FOV circle** shows the radius around the
+cursor within which the assist engages.
 
 ### Controls
 
@@ -131,8 +134,12 @@ Turn **Auto dwell-click** off to keep the pull assist but click manually.
 | **Smoothness** | 0 = snappy, 1 = long buttery glide. Motion is frame-rate independent. |
 | **Max speed** | Cap on cursor speed (px/sec) so a big jump glides in, never snaps. |
 | **Target steadiness** | Jitter smoothing on the target point (EMA). |
-| **Dwell time** | How long to hold near a target before a click fires (200–1500 ms). |
+| **Click mode** | **Dwell** (auto-click after holding on target), **Trigger key** (press a key to click instantly), or **Off** (manual). |
+| **Dwell time** | In dwell mode, how long to hold before a click fires (50–1500 ms). |
+| **Trigger key** | In trigger mode, the (recordable) key that fires an instant click. |
 | **Click radius** | How close counts as "on target" for dwell. |
+| **Pull radius** | FOV: only assist toward colors within this circle of the cursor (0 = whole screen). |
+| **Show crosshair circle** | Draw the FOV circle over the cursor (green when locked on). |
 | **Target colors** | Add multiple colors via picker or on-screen **eyedropper**; click a swatch to remove. |
 | **Sensitivity** | Global HSV tolerance applied to all colors (higher = matches more). |
 | **Min area** | Ignores colored specks smaller than this (px²). |
@@ -186,6 +193,7 @@ detection frame no longer makes the cursor stutter. Smoothing on the **target**
 | `targeting.py` | Nearest in-region contour point + EMA (downscale-aware). |
 | `cursor.py` | `SendInput` relative move + click; time-based ease; dwell machine. |
 | `mouse_block.py` | Optional low-level hook to suppress physical mouse while pulling. |
+| `overlay.py` | Transparent click-through crosshair / FOV-circle overlay. |
 | `controller.py` | Decoupled detection + ~180 Hz movement threads. |
 | `webserver.py` | Local HTTP server + JSON API for the web UI. |
 | `webpage.py` | The self-contained dark web control panel (HTML/CSS/JS). |
