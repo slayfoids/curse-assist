@@ -17,12 +17,20 @@ import time
 from .detection import DetectedShape
 from .segmentation import contour_points_in_region, segment_regions
 
-# Velocity-lead tuning: aim ahead by LEAD_S when the target is moving faster than
-# LEAD_DEADZONE px/s. The deadzone means a *static* target gets zero lead, so
-# lead never costs static accuracy (which is the main use case).
-LEAD_S = 0.055
+# Motion prediction. A moving target is only *known* as of the last detection
+# frame, so the pointer trails by roughly the detection interval plus smoothing.
+# We predict ahead by (LEAD_FRAMES x measured detection interval), which
+# auto-scales with frame rate: more lead when detection is slow, less when fast.
+# A static target is below LEAD_DEADZONE and gets zero prediction, so precision
+# on a still target is never affected.
+# Predicted lead time = LEAD_BASE (smoothing latency, ~constant) + LEAD_FRAMES x
+# detection interval (sampling latency, scales with frame rate).
+LEAD_BASE = 0.02
+LEAD_FRAMES = 2.1
+LEAD_MIN_S = 0.02
+LEAD_MAX_S = 0.16
 LEAD_DEADZONE = 45.0
-LEAD_MAX = 120.0  # cap the lead so a fast flick can't overshoot wildly
+LEAD_MAX = 220.0  # absolute cap (px) so a fast flick can't overshoot wildly
 
 
 class TargetTracker:
@@ -34,6 +42,7 @@ class TargetTracker:
         self._vel = np.zeros(2)                       # smoothed velocity px/s
         self._prev_raw: Optional[np.ndarray] = None
         self._prev_t: Optional[float] = None
+        self._dt = 1.0 / 60.0                         # smoothed detection interval
 
     def set_ema(self, ema: float) -> None:
         self._ema = max(0.0, min(1.0, ema))
@@ -151,6 +160,8 @@ class TargetTracker:
                 # Heavy velocity smoothing: keeps prediction stable at low fps
                 # (noisy per-frame deltas won't cause overshoot spikes).
                 self._vel = 0.85 * self._vel + 0.15 * inst
+                if dt < 0.5:  # ignore long stalls when estimating the interval
+                    self._dt = 0.8 * self._dt + 0.2 * dt
         self._prev_raw = raw
         self._prev_t = now
 
@@ -171,10 +182,13 @@ class TargetTracker:
             self._smoothed = ema_eff * raw + (1.0 - ema_eff) * self._smoothed
 
         # Lead the target when it's actually moving (zero lead when static, so
-        # static aim stays pixel-accurate).
+        # static aim stays pixel-accurate). The lead time scales with the
+        # detection interval so it compensates frame-rate latency automatically.
         out = self._smoothed
         if speed > LEAD_DEADZONE:
-            lead = self._vel * LEAD_S
+            lead_time = min(LEAD_MAX_S,
+                            max(LEAD_MIN_S, LEAD_BASE + LEAD_FRAMES * self._dt))
+            lead = self._vel * lead_time
             n = float(np.hypot(lead[0], lead[1]))
             if n > LEAD_MAX:
                 lead = lead * (LEAD_MAX / n)

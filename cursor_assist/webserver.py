@@ -27,6 +27,16 @@ from .webpage import PAGE
 VK_LBUTTON = 0x01
 VK_ESCAPE = 0x1B
 
+# Click-trigger tokens that mean a mouse button (mapped to `mouse` lib names).
+# Anything not in here is treated as a keyboard key/combo.
+MOUSE_TOKENS = {
+    "LMB": "left",
+    "RMB": "right",
+    "MMB": "middle",
+    "MB4": "x",
+    "MB5": "x2",
+}
+
 
 def _hsv_to_hex(c: ColorTarget) -> str:
     r, g, b = colorsys.hsv_to_rgb(c.h / 179.0, c.s / 255.0, c.v / 255.0)
@@ -66,6 +76,7 @@ class WebApp:
         self._eyedropping = False
         self._eyedrop_thread: Optional[threading.Thread] = None
         self._hotkey_handles: list = []
+        self._mouse_hooks: list = []
         self._httpd: Optional[ThreadingHTTPServer] = None
         self.quit_event = threading.Event()  # set when the app is shutting down
         self._stopped = False
@@ -189,11 +200,19 @@ class WebApp:
                 self.state.get("hotkey_toggle_pull"),
                 lambda: self.state.set("pull_enabled",
                                        not self.state.get("pull_enabled"))))
-            # Instant-click trigger key, only while in "trigger" click mode.
+            # Instant-click trigger, only while in "trigger" click mode. The
+            # trigger can be a keyboard key/combo or a mouse button.
             trig = self.state.get("hotkey_trigger")
             if self.state.get("click_mode") == "trigger" and trig:
-                self._hotkey_handles.append(keyboard.add_hotkey(
-                    trig, self.controller.trigger_click))
+                mouse_btn = MOUSE_TOKENS.get(trig)
+                if mouse_btn:
+                    import mouse
+                    self._mouse_hooks.append(mouse.on_button(
+                        self.controller.trigger_click,
+                        buttons=(mouse_btn,), types=("down",)))
+                else:
+                    self._hotkey_handles.append(keyboard.add_hotkey(
+                        trig, self.controller.trigger_click))
         except Exception:
             pass
 
@@ -208,6 +227,16 @@ class WebApp:
         except Exception:
             pass
         self._hotkey_handles = []
+        try:
+            import mouse
+            for h in self._mouse_hooks:
+                try:
+                    mouse.unhook(h)
+                except (KeyError, ValueError):
+                    pass
+        except Exception:
+            pass
+        self._mouse_hooks = []
 
     def _record_hotkey(self) -> Optional[str]:
         try:

@@ -144,6 +144,40 @@ def run_static(st, trials=8, dur=1.3):
     return finals, settles
 
 
+def run_linear(st, speed_px_s=1000.0, dur=4.0):
+    """Target sweeps straight left<->right at constant speed (the realistic case
+    of an object moving across the screen). Measures steady-state centering error
+    away from the turnarounds."""
+    c = ctrl.AssistController(st)
+    c.start()
+    errs = []
+    x, y = 180.0, H / 2.0
+    _tgt["x"], _tgt["y"] = x, y
+    vm.x, vm.y = x, y
+    direction = 1.0
+    t0 = last = time.perf_counter()
+    try:
+        while True:
+            now = time.perf_counter()
+            t = now - t0
+            if t >= dur:
+                break
+            dt = now - last
+            last = now
+            x += direction * speed_px_s * dt
+            if x > W - 180:
+                x, direction = W - 180, -1.0
+            elif x < 180:
+                x, direction = 180.0, 1.0
+            _tgt["x"] = x
+            if 300 < x < W - 300 and t > 0.8:   # steady middle, post-acquisition
+                errs.append(math.hypot(vm.x - x, vm.y - y))
+            time.sleep(0.004)
+    finally:
+        c.stop()
+    return errs
+
+
 def run_tracking(st, dur=5.0, period=4.0):
     """Target circles the screen; `period` seconds per lap (smaller = faster)."""
     c = ctrl.AssistController(st)
@@ -197,9 +231,9 @@ def report(name, smoothness, max_speed, ema, fps):
 def main():
     print(f"Aim simulation on a {W}x{H} virtual screen, target r={RADIUS}px.")
     # Screen capture (the mode actually used) at realistic frame rates.
-    m1, mx1 = report("DEFAULT", 0.22, 12000, 0.45, fps=60)
-    m2, mx2 = report("DEFAULT @30fps", 0.22, 12000, 0.45, fps=30)
-    m3, mx3 = report("STRONG (snappy)", 0.12, 20000, 0.7, fps=60)
+    m1, mx1 = report("DEFAULT", 0.22, 25000, 0.45, fps=60)
+    m2, mx2 = report("DEFAULT @30fps", 0.22, 25000, 0.45, fps=30)
+    m3, mx3 = report("STRONG (snappy)", 0.12, 40000, 0.7, fps=60)
 
     ok = all(m <= 2.5 for m in (m1, m2, m3)) and all(
         mx <= 5.0 for mx in (mx1, mx2, mx3))

@@ -153,11 +153,11 @@ within which the tool offers guidance.
 |---|---|
 | **Guidance ON/OFF** | Master toggle for cursor guidance (also the *Toggle guidance* hotkey). |
 | **Smoothness** | 0 = responsive, 1 = long gentle glide. Motion is frame-rate independent. |
-| **Max speed** | Cap on how fast the pointer moves (px/sec, up to 30000). Higher = keeps up with a color that moves quickly. |
+| **Max speed** | Cap on how fast the pointer moves (px/sec, up to 100000). Higher = keeps up with a color that moves quickly. |
 | **Target steadiness** | Smooths out detection jitter so the pointer doesn't wobble. |
 | **Click mode** | **Dwell** (click after resting on the target), **Key** (a chosen key issues the click), or **Off** (click manually). |
 | **Dwell time** | In dwell mode, how long to rest before a click is issued (50–1500 ms). |
-| **Click key** | In key mode, the (recordable) key that issues a click. |
+| **Click key/button** | In key mode, what issues the click: a keyboard key, or a mouse button (RMB / MMB / side buttons) via quick-pick buttons — no need to record. |
 | **Click radius** | How close to the target counts as "on it" for dwell. |
 | **Higher click magnitude** | Issue clicks repeatedly while resting on the target — for users who can't click many times themselves. |
 | **Click interval** | Time between repeated clicks (30–1000 ms). |

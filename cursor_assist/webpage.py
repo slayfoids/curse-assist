@@ -154,7 +154,7 @@ PAGE = r"""<!doctype html>
       <input type="range" data-key="smoothness" min="0" max="1" step="0.05">
       <span class="val"></span></div>
     <div class="row"><label>Max speed</label>
-      <input type="range" data-key="max_speed" min="500" max="30000" step="250">
+      <input type="range" data-key="max_speed" min="500" max="100000" step="500">
       <span class="val"></span></div>
     <div class="row"><label>Target steadiness</label>
       <input type="range" data-key="target_ema" min="0.05" max="0.9" step="0.05">
@@ -179,9 +179,22 @@ PAGE = r"""<!doctype html>
     <div class="row" id="intervalRow"><label>Click interval (ms)</label>
       <input type="range" data-key="click_interval_ms" min="30" max="1000" step="10">
       <span class="val"></span></div>
-    <div class="hk" id="triggerRow"><label>Trigger key</label>
-      <input class="txt" id="hk_trigger" style="width:auto">
-      <button class="btn" onclick="record('trigger')">Record</button></div>
+    <div id="triggerRow">
+      <div class="hk"><label>Click key/button</label>
+        <input class="txt" id="hk_trigger" style="width:auto">
+        <button class="btn" onclick="record('trigger')">Record</button></div>
+      <div class="btns" style="margin-top:4px">
+        <button class="btn" onclick="setTrigger('RMB')">RMB</button>
+        <button class="btn" onclick="setTrigger('MMB')">MMB</button>
+        <button class="btn" onclick="setTrigger('MB4')">Mouse4</button>
+        <button class="btn" onclick="setTrigger('MB5')">Mouse5</button>
+        <button class="btn" onclick="setTrigger('LMB')">LMB</button>
+        <button class="btn" onclick="setTrigger('right ctrl')">R-Ctrl</button>
+        <button class="btn" onclick="setTrigger('space')">Space</button>
+      </div>
+      <div class="hint">Quick-pick a key or mouse button — no need to Record.
+        (RMB may also open the right-click menu.)</div>
+    </div>
     <div class="hint" id="clickHint"></div>
   </div>
 
@@ -326,6 +339,7 @@ function clearRoi(){['roi_x','roi_y','roi_w','roi_h'].forEach(id=>$('#'+id).valu
 function applyHotkeys(){act('apply_hotkeys',{show:$('#hk_show').value.trim(),
   pull:$('#hk_pull').value.trim(), trigger:$('#hk_trigger').value.trim()})
   .then(()=>flash('hotkeys applied'));}
+function setTrigger(t){$('#hk_trigger').value=t;applyHotkeys();flash('click set to '+t);}
 async function record(which){flash('press any key or combo…');
   const r=await act('record_hotkey');
   if(r&&r.hotkey){
