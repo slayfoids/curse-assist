@@ -1,8 +1,8 @@
 """Entry point: ``python -m cursor_assist``.
 
-Parses a few optional capture flags, builds the shared state, and launches the
-control panel. The GUI owns the main thread; the detection/pull loop runs in a
-background thread started by the panel.
+Builds the shared state and launches the control UI. By default this is the
+sleek local web panel (opens in your browser); ``--tk`` uses the legacy Tkinter
+panel instead. The vision/pull engine runs in background threads either way.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ import sys
 
 from . import persistence
 from .config import AppState
-from .gui import ControlPanel
 
 
 def _parse_args(argv=None) -> argparse.Namespace:
@@ -20,6 +19,12 @@ def _parse_args(argv=None) -> argparse.Namespace:
         prog="cursor_assist",
         description="Color-based cursor assist accessibility tool (Windows).",
     )
+    p.add_argument("--tk", action="store_true",
+                   help="Use the legacy Tkinter panel instead of the web UI.")
+    p.add_argument("--port", type=int, default=8756,
+                   help="Port for the local web UI (default 8756).")
+    p.add_argument("--no-browser", action="store_true",
+                   help="Don't auto-open the browser; just print the URL.")
     # Defaults are None so we can tell an explicit flag from an omitted one and
     # only override the persisted settings when the user actually passed it.
     p.add_argument("--source", choices=["screen", "obs"], default=None,
@@ -55,7 +60,13 @@ def main(argv=None) -> int:
             state.capture.left, state.capture.top, \
                 state.capture.width, state.capture.height = args.region
 
-    ControlPanel(state, load_settings=False).run()
+    if args.tk:
+        from .gui import ControlPanel
+        ControlPanel(state, load_settings=False).run()
+    else:
+        from .webserver import WebApp
+        WebApp(state, port=args.port,
+               open_browser=not args.no_browser).serve_blocking()
     return 0
 
 

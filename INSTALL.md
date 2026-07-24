@@ -78,30 +78,37 @@ cloned it (e.g. `C:\cursor-assist`).
 
 ## Step 4 — First run (normal mode, to confirm it works)
 
+First, in **OBS**, click **Start Virtual Camera** (OBS is the default source).
+Then:
+
 ```bat
 py -m cursor_assist
 ```
 
-The always-on-top **control panel** should appear — a small dark window with
-sections for Assist, Click, Target color, Region, Capture, and Hotkeys. A console
-window stays open too — that is expected in this mode; we remove it in Step 6.
+Your browser opens the **control panel** — a sleek all-black web page
+(`http://127.0.0.1:8756`) with cards for Motion, Click, Target colors, Region,
+Capture, Input control, and Hotkeys. A console window stays open too — that is
+expected in this mode; we remove it in Step 6.
 
-> **Press Right Shift at any time to show or hide the panel.** All settings save
-> automatically and come back next time you launch. (Right Shift also still works
-> as a normal Shift key — if that bothers you, rebind it in the *Hotkeys* section.)
+> **Press Right Shift at any time to re-open/focus the panel tab.** All settings
+> save automatically and come back next time. (Hotkeys are rebindable — Right
+> Shift also still works as a normal Shift key, so change it if that bothers you.)
 
 Quick check:
-1. Click **Pick color…** and choose the color of the shape/outline you want to
-   target.
-2. Adjust **Color tolerance** until the status line shows **`target: yes`** in
-   green when your target is on screen.
+1. Under **Target colors**, click **＋ Pick** (or **⦿ Eyedropper**, then click the
+   exact pixel on screen) to add the color of the shape/outline you want. Add as
+   many colors as you like.
+2. Adjust **Sensitivity** until the status dot (top-right) turns **green** when
+   your target is on screen.
 3. Pick a **Target region** (Head / Torso / etc.).
-4. Click **Pull: OFF** to turn it **ON** (or press **Ctrl+Alt+Space**).
-5. Move the mouse roughly toward the target — the cursor should ease the rest of
+4. Click **PULL: OFF** to turn it **ON** (or press **F8**).
+5. Move the mouse roughly toward the target — the cursor should glide the rest of
    the way, and clicking happens automatically after the **Dwell time**.
+6. If your hand fights the pull, enable **Block my mouse while the bot is moving**
+   under *Input control*.
 
-Close the window (or the console) to stop it. Once you're happy it works, move on
-to background mode.
+Click **Quit** in the page (or close the console) to stop it. Once you're happy,
+move on to background mode.
 
 ---
 
@@ -120,9 +127,9 @@ You should see all tests pass.
 
 ## Step 6 — Run it in the background (no console window)
 
-This is the mode you'll use day to day: **no black terminal window**, just the
-control panel. Each launch is given a **randomly generated instance name**, which
-is also the process name you'll see in Task Manager.
+This is the mode you'll use day to day: **no black terminal window** — the panel
+opens as a browser tab. Each launch is given a **randomly generated instance
+name**, which is also the process name you'll see in Task Manager.
 
 ### Start it
 
@@ -144,9 +151,10 @@ Cursor Assist started in the background (no console window).
   process (PID) : k7f3q9x2m1a8p0dz.exe  (12345)
 ```
 
-The control panel appears with **no console window** behind it. The chosen name
-and process ID are saved to `.runtime\instance.json` inside the project folder so
-you can always find and stop it.
+The panel opens in your browser with **no console window** behind it. The chosen
+name and process ID are saved to `.runtime\instance.json` inside the project
+folder so you can always find and stop it. Press **Right Shift** any time to
+re-open the panel tab.
 
 ### Stop it
 

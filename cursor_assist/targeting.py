@@ -36,23 +36,28 @@ class TargetTracker:
         active_region: str,
         cursor_screen: Tuple[int, int],
         capture_origin: Tuple[int, int],
+        scale: float = 1.0,
     ) -> Optional[Tuple[int, int]]:
         """Return a smoothed screen-space target, or ``None`` if none found.
 
         Coordinate spaces
         -----------------
-        * Contours are in *frame* coordinates (0,0 at the capture top-left).
+        * Contours are in *detection* coordinates, which may be downscaled by
+          ``scale`` relative to the captured frame (detection runs on a smaller
+          image for speed).
         * The cursor and the returned target are in absolute *desktop* pixels.
-        ``capture_origin`` bridges the two: ``screen = frame + origin``.
+        Mapping: ``detection = (screen - origin) * scale`` and
+        ``screen = origin + detection / scale``.
         """
         if figure is None:
             self._smoothed = None
             return None
 
         ox, oy = capture_origin
-        # Cursor expressed in frame coordinates for the nearest-point search.
-        cx = cursor_screen[0] - ox
-        cy = cursor_screen[1] - oy
+        inv = 1.0 / scale if scale else 1.0
+        # Cursor expressed in detection coordinates for the nearest-point search.
+        cx = (cursor_screen[0] - ox) * scale
+        cy = (cursor_screen[1] - oy) * scale
 
         region_rect = segment_regions(figure.bbox).get(active_region)
         if region_rect is None:
@@ -74,8 +79,9 @@ class TargetTracker:
         d2 = (pts[:, 0] - cx) ** 2 + (pts[:, 1] - cy) ** 2
         nearest = pts[int(np.argmin(d2))]
 
-        # Back to screen space, then smooth.
-        raw = np.array([nearest[0] + ox, nearest[1] + oy], dtype=np.float64)
+        # Back to screen space (undo the downscale), then smooth.
+        raw = np.array([ox + nearest[0] * inv, oy + nearest[1] * inv],
+                       dtype=np.float64)
         if self._smoothed is None:
             self._smoothed = raw
         else:

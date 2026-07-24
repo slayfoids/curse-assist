@@ -6,13 +6,18 @@ from cursor_assist import persistence
 
 def test_round_trip_preserves_settings(tmp_path):
     st = AppState()
-    st.set("pull_factor", 0.42)
+    st.set("smoothness", 0.7)
+    st.set("max_speed", 5500)
+    st.set("sensitivity", 20)
+    st.set("suppress_mouse", True)
     st.set("dwell_ms", 900)
     st.set("active_region", "L-Leg")
     st.set("hotkey_show_panel", "right shift")
+    st.set("hotkey_toggle_pull", "f9")
     with st.lock:
         st.colors[0].h = 100
-        st.capture.source = "obs"
+        st.colors.append(__import__("cursor_assist.config", fromlist=["ColorTarget"]).ColorTarget(h=5))
+        st.capture.source = "screen"
         st.capture.width = 640
 
     path = tmp_path / "settings.json"
@@ -20,12 +25,17 @@ def test_round_trip_preserves_settings(tmp_path):
 
     fresh = AppState()
     assert persistence.load(fresh, path) is True
-    assert fresh.get("pull_factor") == 0.42
+    assert fresh.get("smoothness") == 0.7
+    assert fresh.get("max_speed") == 5500
+    assert fresh.get("sensitivity") == 20
+    assert fresh.get("suppress_mouse") is True
     assert fresh.get("dwell_ms") == 900
     assert fresh.get("active_region") == "L-Leg"
     assert fresh.get("hotkey_show_panel") == "right shift"
+    assert fresh.get("hotkey_toggle_pull") == "f9"
+    assert len(fresh.get("colors")) == 2
     assert fresh.get("colors")[0].h == 100
-    assert fresh.get("capture").source == "obs"
+    assert fresh.get("capture").source == "screen"
     assert fresh.get("capture").width == 640
 
 

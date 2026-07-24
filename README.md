@@ -6,12 +6,15 @@ and **gently pulls the mouse cursor toward a selected target** so the user can
 more easily interact with on-screen art — for example, tracing or clicking parts
 of a hand-drawn human figure — without needing precise manual control.
 
-The pull is a smooth easing motion (never a snap), and clicks fire by **dwelling**
-over a target rather than requiring a physical button press.
+The pull is a smooth, frame-rate-independent easing motion (never a snap), and
+clicks fire by **dwelling** over a target rather than requiring a physical button
+press. The control panel is a **sleek local web app** that opens in your browser.
 
-> Windows only. All cursor control goes through the standard `SendInput` API —
-> the same path a real mouse uses. No DLL injection, no hooking, no reading of any
-> other process's memory. Screen-pixel input only.
+> Windows only. Cursor movement and clicks go through the standard `SendInput`
+> API — the same path a real mouse uses. The one optional exception is the
+> "block my mouse" feature, which uses a standard Windows low-level mouse hook
+> (see [Input control](#controls)); it is off by default. Screen-pixel input
+> only — nothing reads another process's memory.
 
 ---
 
@@ -37,7 +40,17 @@ runs — the global hotkey falls back to a window-focused key binding.
 py -m cursor_assist
 ```
 
-or double-click / run `run.py`.
+This starts the engine and opens the **web control panel** in your default
+browser (a local server on `http://127.0.0.1:8756`, loopback only — never exposed
+to the network). Or double-click / run `run.py`.
+
+Options:
+
+```bash
+py -m cursor_assist --port 9000     # use a different port
+py -m cursor_assist --no-browser    # don't auto-open; just print the URL
+py -m cursor_assist --tk            # legacy Tkinter panel instead of the web UI
+```
 
 ### Run in the background (no console window)
 
@@ -75,35 +88,35 @@ py -m cursor_assist --monitor 2
 py -m cursor_assist --source obs --obs-index 0
 ```
 
-For the OBS source, start **Start Virtual Camera** in OBS first.
+The OBS virtual camera is the **default and recommended** source — start
+**Start Virtual Camera** in OBS before launching.
 
 ---
 
-## The settings panel
+## The control panel (web UI)
 
-A small, dark, always-on-top control panel organised into sections. **Press
-Right Shift to show or hide it** at any time — handy in background mode, where
-there's no window to click. Every setting is exposed and **persists between runs**
-(saved to `%LOCALAPPDATA%\CursorAssist\settings.json`).
+A sleek, all-black web panel that opens in your browser, organised into cards.
+Everything is exposed and **persists between runs** (saved to
+`%LOCALAPPDATA%\CursorAssist\settings.json`). **Press Right Shift** any time to
+re-open/focus the panel tab.
 
-Sections: **Assist** (pull strength, max px/frame, smoothing) · **Click** (auto
-dwell-click, dwell time, radius) · **Target color** (picker, tolerance, min area,
-thin-outline toggle) · **Target region** (six big buttons) · **Capture source**
-(Screen/OBS, monitor, region, OBS index) · **Hotkeys** (both editable) · footer
-(**Save settings**, **Reset defaults**, **Quit**).
+Cards: **Motion** (smoothness, max speed, target steadiness) · **Click** (auto
+dwell-click, dwell time, radius) · **Target colors** (multiple colors, picker,
+eyedropper, sensitivity, min area, thin-outline) · **Target region** (six
+buttons) · **Capture source** (OBS/Screen, monitor, region, OBS index, detail) ·
+**Input control** (block my mouse) · **Hotkeys** (both rebindable, with Record).
 
 ## How to use it
 
-1. Launch the app. Press **Right Shift** any time to show/hide the panel.
-2. Click **Pick color…** and choose the color of the outline/shape you want to
-   target. Adjust **Tolerance** until the target is reliably picked up (the
-   `target: yes` status turns green when a target is found).
+1. Launch the app — the panel opens in your browser. Start OBS's virtual camera.
+2. Add one or more **Target colors**: **＋ Pick** a color, or use the
+   **⦿ Eyedropper** and click the exact pixel on screen you want to match. Add as
+   many colors as you like. Tune **Sensitivity** until the status dot turns green.
 3. Pick a **Target region** — Head / Torso / L-Arm / R-Arm / L-Leg / R-Leg. The
    cursor is only pulled toward contour points inside that region.
-4. Toggle **PULL** on (button or the global hotkey **Ctrl+Alt+Space**).
-5. Move roughly toward the target; the cursor eases the rest of the way. Hold
-   near the target and, after the **Dwell time**, a click fires automatically.
-   A short beep signals that a dwell has started.
+4. Toggle **PULL** on (button or your **Toggle pull** hotkey, default **F8**).
+5. Move roughly toward the target; the cursor glides the rest of the way. Hold
+   near it and, after the **Dwell time**, a click fires automatically.
 
 Turn **Auto dwell-click** off to keep the pull assist but click manually.
 
@@ -111,47 +124,50 @@ Turn **Auto dwell-click** off to keep the pull assist but click manually.
 
 | Control | What it does |
 |---|---|
-| **Right Shift** | Show / hide the settings panel (editable in *Hotkeys*). |
-| **PULL ON/OFF** | Master toggle for the pull assist (also **Ctrl+Alt+Space**). |
-| **Pull strength** | Easing factor per frame (0.1–0.5). Higher = stronger pull. |
-| **Max px / frame** | Hard cap on cursor travel per frame (prevents any snap). |
-| **Smoothing** | Jitter smoothing on the target point (EMA, 0.05–0.9). |
+| **PULL ON/OFF** | Master toggle for the pull assist (also the *Toggle pull* hotkey). |
+| **Smoothness** | 0 = snappy, 1 = long buttery glide. Motion is frame-rate independent. |
+| **Max speed** | Cap on cursor speed (px/sec) so a big jump glides in, never snaps. |
+| **Target steadiness** | Jitter smoothing on the target point (EMA). |
 | **Dwell time** | How long to hold near a target before a click fires (200–1500 ms). |
 | **Click radius** | How close counts as "on target" for dwell. |
-| **Tolerance** | Widens the HSV match around the picked color. |
+| **Target colors** | Add multiple colors via picker or on-screen **eyedropper**; click a swatch to remove. |
+| **Sensitivity** | Global HSV tolerance applied to all colors (higher = matches more). |
 | **Min area** | Ignores colored specks smaller than this (px²). |
-| **Target region** | Restricts the pull to one body region of the figure. |
-| **Capture source** | Desktop (mss) vs OBS virtual cam; monitor / region / OBS index. |
-| **Auto dwell-click** | Master enable for automatic clicking (off = manual only). |
 | **Detect thin outlines** | Detect colored *outlines*, not just filled color. |
-| **Hotkeys** | Rebind both hotkeys, then **Apply hotkeys**. |
-| **Save / Reset / Quit** | Persist now · restore defaults · stop the app. |
+| **Target region** | Restricts the pull to one body region of the figure. |
+| **Capture source** | OBS virtual cam (recommended) or desktop; monitor / region / OBS index. |
+| **Detail (speed)** | Detection downscale — lower = faster, higher = more detail. |
+| **Block my mouse** | While the bot is moving, suppress your *physical* mouse so a shaky hand doesn't fight it (uses a Windows low-level mouse hook; clicks still pass). |
+| **Hotkeys** | Rebind either hotkey — type it or click **Record** and press the keys. |
+| **Reset / Quit** | Restore defaults · stop the app. Changes autosave. |
 
-> **Note on Right Shift:** it's registered as a plain single-key hotkey, so it
-> also still works as a normal Shift while typing — pressing it toggles the panel
-> *and* shifts. If that's annoying, rebind it in the **Hotkeys** section (e.g. to
-> `ctrl+alt+s`) and click **Apply hotkeys**.
+> **Hotkeys are fully rebindable.** Defaults are **Right Shift** (show panel) and
+> **F8** (toggle pull). Click **Record** and press any key or combo to rebind.
+> Note Right Shift also still works as a normal Shift while typing — rebind it if
+> that bothers you.
 
 ---
 
 ## How it works
 
 ```
- mss / OBS vcam ─▶ HSV color mask ─▶ findContours ─▶ largest = "the figure"
-                                                        │
-                        proportional body-region split ─┤ (Head/Torso/Arms/Legs)
-                                                        ▼
-        nearest contour point in the active region ─▶ EMA smoothing ─▶ target
-                                                        │
-       SendInput relative move: cur += (target-cur)*pull, capped per frame
-                                                        │
-                       dwell timer within click radius ─▶ SendInput click
+ DETECTION thread (runs as fast as the source allows)
+   OBS vcam / mss ─▶ downscale ─▶ HSV mask (all colors) ─▶ findContours
+       ─▶ largest = figure ─▶ body-region split ─▶ nearest point in region
+       ─▶ EMA smoothing ─▶ publishes the current target ─┐
+                                                          │  (shared target)
+ MOVEMENT thread (~180 Hz, independent)                   ▼
+   read latest target ─▶ time-based ease: new = cur + (target-cur)·α(dt)
+       ─▶ SendInput relative move (speed-capped) ─▶ dwell timer ─▶ click
+       ─▶ (optional) suppress physical mouse while pulling
 ```
 
-The loop runs in a background thread at ~60 Hz; the Tkinter GUI owns the main
-thread. Smoothing is applied to the **target** point (not the cursor) so noisy
-detection doesn't make the pull twitch, and per-frame travel is capped so even a
-strong pull never visibly snaps.
+**Why it's smooth:** motion and detection are **decoupled**. The cursor is eased
+by a dedicated ~180 Hz loop using *time-based* smoothing (`α = 1 − e^(−dt/τ)`),
+so it glides analog-smoothly regardless of how fast detection runs. Detection
+runs on a downscaled frame for speed and only *publishes* a target; a slow
+detection frame no longer makes the cursor stutter. Smoothing on the **target**
+(not the cursor) kills detection jitter; the speed cap prevents snapping.
 
 ### Modules
 
@@ -159,12 +175,15 @@ strong pull never visibly snaps.
 |---|---|
 | `config.py` | Thread-safe shared state (`AppState`, `ColorTarget`, capture config). |
 | `capture.py` | `mss` screen capture and OBS virtual-camera capture. |
-| `detection.py` | HSV masking, contour finding, shape classification. |
+| `detection.py` | HSV masking (multi-color), contour finding, shape classification. |
 | `segmentation.py` | Split a figure's bounding box into named body regions. |
-| `targeting.py` | Pick the nearest in-region contour point; EMA smoothing. |
-| `cursor.py` | `SendInput` relative move + click; dwell-click state machine. |
-| `controller.py` | The 60 Hz capture → detect → pull → click loop. |
-| `gui.py` | Dark, sectioned, always-on-top settings panel + global hotkeys. |
+| `targeting.py` | Nearest in-region contour point + EMA (downscale-aware). |
+| `cursor.py` | `SendInput` relative move + click; time-based ease; dwell machine. |
+| `mouse_block.py` | Optional low-level hook to suppress physical mouse while pulling. |
+| `controller.py` | Decoupled detection + ~180 Hz movement threads. |
+| `webserver.py` | Local HTTP server + JSON API for the web UI. |
+| `webpage.py` | The self-contained dark web control panel (HTML/CSS/JS). |
+| `gui.py` | Legacy Tkinter panel (`--tk`). |
 | `persistence.py` | Save/load all settings to JSON so they persist. |
 
 ## Body-region heuristics

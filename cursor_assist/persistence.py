@@ -18,15 +18,18 @@ SETTINGS_VERSION = 1
 
 # Scalar fields copied verbatim to/from JSON.
 _SCALAR_FIELDS = (
-    "pull_factor",
-    "max_px_per_frame",
+    "smoothness",
+    "max_speed",
     "target_ema",
     "dwell_ms",
     "click_radius",
     "detect_thin_border",
     "min_contour_area",
+    "sensitivity",
+    "detect_scale",
     "active_region",
     "auto_click_enabled",
+    "suppress_mouse",
     "hotkey_show_panel",
     "hotkey_toggle_pull",
 )

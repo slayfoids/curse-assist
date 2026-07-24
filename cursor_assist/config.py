@@ -47,8 +47,8 @@ class ColorTarget:
 class CaptureConfig:
     """Where and how frames are grabbed from."""
 
-    # "screen" uses mss over the region below; "obs" reads the OBS virtual cam.
-    source: str = "screen"
+    # "obs" reads the OBS virtual cam (default/recommended); "screen" uses mss.
+    source: str = "obs"
     # Screen region in absolute desktop pixels. width/height == 0 means full monitor.
     left: int = 0
     top: int = 0
@@ -69,9 +69,11 @@ class AppState:
     auto_click_enabled: bool = True  # dwell-click master enable
 
     # --- Pull / movement tuning -----------------------------------------
-    pull_factor: float = 0.25        # 0.1 - 0.5, easing strength per frame
-    max_px_per_frame: int = 40       # cap on cursor travel per frame
-    target_ema: float = 0.35         # smoothing applied to the *target* point
+    # Motion is time-based and frame-rate independent (see controller). These
+    # tune *feel*, not per-frame steps, so it stays smooth regardless of FPS.
+    smoothness: float = 0.35         # 0 = snappy .. 1 = very smooth (glide)
+    max_speed: int = 4000            # px/second cap (stops overshoot on jumps)
+    target_ema: float = 0.4          # smoothing applied to the *target* point
 
     # --- Dwell click -----------------------------------------------------
     dwell_ms: int = 600              # 200 - 1500 ms
@@ -81,6 +83,8 @@ class AppState:
     colors: List[ColorTarget] = field(default_factory=lambda: [ColorTarget()])
     detect_thin_border: bool = True  # detect colored outlines, not just fills
     min_contour_area: int = 60       # ignore specks below this many px^2
+    sensitivity: int = 12            # global color tolerance applied to all colors
+    detect_scale: float = 0.5        # downscale factor for detection speed (0.25-1)
 
     # --- Region selection ------------------------------------------------
     active_region: str = "Torso"
@@ -88,9 +92,12 @@ class AppState:
     # --- Capture ---------------------------------------------------------
     capture: CaptureConfig = field(default_factory=CaptureConfig)
 
-    # --- Hotkeys (editable in the panel; names use the `keyboard` syntax) -
-    hotkey_show_panel: str = "right shift"     # show/hide the settings panel
-    hotkey_toggle_pull: str = "ctrl+alt+space"  # turn the pull assist on/off
+    # --- Input control ---------------------------------------------------
+    suppress_mouse: bool = False     # block physical mouse movement while pulling
+
+    # --- Hotkeys (editable/recordable in the panel; `keyboard` syntax) ----
+    hotkey_show_panel: str = "right shift"  # show/hide the settings panel
+    hotkey_toggle_pull: str = "f8"          # turn the pull assist on/off
 
     # --- Loop status (loop -> GUI, read-only for the GUI) ----------------
     loop_fps: float = 0.0

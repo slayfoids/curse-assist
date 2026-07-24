@@ -76,10 +76,10 @@ def test_color_target_ranges_clamp():
 def test_appstate_snapshot_is_independent():
     st = AppState()
     snap = st.snapshot()
-    st.set("pull_factor", 0.5)
+    st.set("smoothness", 0.99)
     st.get("colors")[0].h = 123
     # Snapshot is a deep copy: later edits don't leak in.
-    assert snap.pull_factor != 0.5 or snap.colors[0].h != 123
+    assert snap.smoothness != 0.99 and snap.colors[0].h != 123
 
 
 if __name__ == "__main__":

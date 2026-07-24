@@ -72,29 +72,49 @@ def click_left() -> None:
 
 # --- Smooth pull ----------------------------------------------------------
 
-def pull_toward(
-    target_screen: Tuple[int, int],
-    pull_factor: float,
-    max_px_per_frame: int,
-) -> Tuple[int, int]:
-    """Ease the cursor one step toward ``target_screen``.
+import math
 
-    Implements ``new = current + (target - current) * pull_factor`` via a
-    single relative move, capped at ``max_px_per_frame`` so even a strong pull
-    never snaps. Returns the cursor position after moving.
+
+def ease_step(
+    target_screen: Tuple[int, int],
+    dt: float,
+    tau: float,
+    max_speed_px_s: float,
+) -> Tuple[int, int]:
+    """Ease the cursor toward ``target_screen`` for one time slice ``dt``.
+
+    Uses an exponential smoothing that is *frame-rate independent*: the fraction
+    of the remaining distance covered depends on the elapsed time ``dt`` and a
+    time-constant ``tau`` (seconds), not on how often this is called. This is
+    what makes the motion feel smooth and analog rather than robotic --
+
+        alpha = 1 - exp(-dt / tau)
+        new   = current + (target - current) * alpha
+
+    Speed is additionally capped at ``max_speed_px_s`` (pixels/second) so a big
+    jump in the target glides in instead of snapping. Returns the new cursor pos.
     """
     cx, cy = get_cursor_pos()
-    dx = (target_screen[0] - cx) * pull_factor
-    dy = (target_screen[1] - cy) * pull_factor
+    rx = target_screen[0] - cx
+    ry = target_screen[1] - cy
 
-    # Cap magnitude while preserving direction.
-    dist = (dx * dx + dy * dy) ** 0.5
-    if dist > max_px_per_frame and dist > 0:
-        scale = max_px_per_frame / dist
-        dx *= scale
-        dy *= scale
+    tau = max(tau, 1e-3)
+    alpha = 1.0 - math.exp(-dt / tau)
+    dx = rx * alpha
+    dy = ry * alpha
 
-    move_relative(round(dx), round(dy))
+    # Cap by speed (px per second) while preserving direction.
+    max_step = max_speed_px_s * dt
+    dist = math.hypot(dx, dy)
+    if dist > max_step and dist > 0:
+        s = max_step / dist
+        dx *= s
+        dy *= s
+
+    # Carry sub-pixel remainder so slow glides don't stall at <1px/tick.
+    idx = int(dx) if abs(dx) >= 1 else (1 if dx > 0.5 else (-1 if dx < -0.5 else 0))
+    idy = int(dy) if abs(dy) >= 1 else (1 if dy > 0.5 else (-1 if dy < -0.5 else 0))
+    move_relative(idx, idy)
     return get_cursor_pos()
 
 
