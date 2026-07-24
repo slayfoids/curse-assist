@@ -1,0 +1,11 @@
+# Core capture + vision
+mss>=9.0.1
+opencv-python>=4.9.0
+numpy>=1.26.0
+
+# Global hotkey (optional but recommended: works when the window is unfocused).
+# If it fails to install, the app falls back to a window-focused key binding.
+keyboard>=0.13.5
+
+# Tkinter ships with the standard CPython Windows installer; no pip package.
+# winsound (dwell/click audio cue) is part of the Windows standard library.
