@@ -12,8 +12,17 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
+import time
+
 from .detection import DetectedShape
 from .segmentation import contour_points_in_region, segment_regions
+
+# Velocity-lead tuning: aim ahead by LEAD_S when the target is moving faster than
+# LEAD_DEADZONE px/s. The deadzone means a *static* target gets zero lead, so
+# lead never costs static accuracy (which is the main use case).
+LEAD_S = 0.09
+LEAD_DEADZONE = 45.0
+LEAD_MAX = 140.0  # cap the lead so a fast flick can't overshoot wildly
 
 
 class TargetTracker:
@@ -22,12 +31,18 @@ class TargetTracker:
     def __init__(self, ema: float = 0.35):
         self._ema = ema
         self._smoothed: Optional[np.ndarray] = None  # screen-space (x, y) float
+        self._vel = np.zeros(2)                       # smoothed velocity px/s
+        self._prev_raw: Optional[np.ndarray] = None
+        self._prev_t: Optional[float] = None
 
     def set_ema(self, ema: float) -> None:
         self._ema = max(0.0, min(1.0, ema))
 
     def reset(self) -> None:
         self._smoothed = None
+        self._vel = np.zeros(2)
+        self._prev_raw = None
+        self._prev_t = None
 
     def pick(
         self,
@@ -106,10 +121,32 @@ class TargetTracker:
         # Back to screen space (undo the downscale), then smooth.
         raw = np.array([ox + target_det[0] * inv, oy + target_det[1] * inv],
                        dtype=np.float64)
+
+        # Estimate a smoothed target velocity from raw deltas.
+        now = time.perf_counter()
+        if self._prev_raw is not None and self._prev_t is not None:
+            dt = now - self._prev_t
+            if dt > 1e-3:
+                inst = (raw - self._prev_raw) / dt
+                self._vel = 0.75 * self._vel + 0.25 * inst
+        self._prev_raw = raw
+        self._prev_t = now
+
         if self._smoothed is None:
-            self._smoothed = raw
+            self._smoothed = raw.copy()
         else:
             a = self._ema
             self._smoothed = a * raw + (1.0 - a) * self._smoothed
 
-        return int(round(self._smoothed[0])), int(round(self._smoothed[1]))
+        # Lead the target when it's actually moving (zero lead when static, so
+        # static aim stays pixel-accurate).
+        out = self._smoothed
+        speed = float(np.hypot(self._vel[0], self._vel[1]))
+        if speed > LEAD_DEADZONE:
+            lead = self._vel * LEAD_S
+            n = float(np.hypot(lead[0], lead[1]))
+            if n > LEAD_MAX:
+                lead = lead * (LEAD_MAX / n)
+            out = self._smoothed + lead
+
+        return int(round(out[0])), int(round(out[1]))

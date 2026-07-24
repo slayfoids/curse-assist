@@ -44,6 +44,7 @@ class AssistController:
         self._stop = threading.Event()
 
         self._tracker = TargetTracker(ema=state.get("target_ema"))
+        self._glider = cur.CursorGlider()
         self._dwell = cur.DwellClicker(on_start=on_dwell_start, on_fire=on_click)
         self._suppressor = MouseSuppressor()
         self._suppressor_started = False
@@ -214,12 +215,13 @@ class AssistController:
 
             if target is None:
                 self._dwell.reset()
+                self._glider.reset()
                 time.sleep(MOVE_DT)
                 continue
 
             smoothness = self._state.get("smoothness")
             tau = 0.03 + max(0.0, min(1.0, smoothness)) * 0.22
-            cursor_pos = cur.ease_step(
+            cursor_pos = self._glider.step(
                 target_screen=target,
                 dt=dt,
                 tau=tau,

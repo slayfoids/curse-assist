@@ -71,9 +71,9 @@ class AppState:
     # --- Pull / movement tuning -----------------------------------------
     # Motion is time-based and frame-rate independent (see controller). These
     # tune *feel*, not per-frame steps, so it stays smooth regardless of FPS.
-    smoothness: float = 0.35         # 0 = snappy .. 1 = very smooth (glide)
-    max_speed: int = 4000            # px/second cap (stops overshoot on jumps)
-    target_ema: float = 0.4          # smoothing applied to the *target* point
+    smoothness: float = 0.25         # 0 = snappy .. 1 = very smooth (glide)
+    max_speed: int = 5500            # px/second cap (stops overshoot on jumps)
+    target_ema: float = 0.45         # smoothing applied to the *target* point
 
     # --- Dwell click -----------------------------------------------------
     dwell_ms: int = 600              # 200 - 1500 ms

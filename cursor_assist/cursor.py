@@ -75,47 +75,62 @@ def click_left() -> None:
 import math
 
 
-def ease_step(
-    target_screen: Tuple[int, int],
-    dt: float,
-    tau: float,
-    max_speed_px_s: float,
-) -> Tuple[int, int]:
-    """Ease the cursor toward ``target_screen`` for one time slice ``dt``.
+class CursorGlider:
+    """Frame-rate-independent easing toward a target, with true convergence.
 
-    Uses an exponential smoothing that is *frame-rate independent*: the fraction
-    of the remaining distance covered depends on the elapsed time ``dt`` and a
-    time-constant ``tau`` (seconds), not on how often this is called. This is
-    what makes the motion feel smooth and analog rather than robotic --
+    Each step covers a fraction ``alpha = 1 - exp(-dt/tau)`` of the remaining
+    distance (so the *feel* is independent of tick rate), speed-capped in px/sec.
 
-        alpha = 1 - exp(-dt / tau)
-        new   = current + (target - current) * alpha
-
-    Speed is additionally capped at ``max_speed_px_s`` (pixels/second) so a big
-    jump in the target glides in instead of snapping. Returns the new cursor pos.
+    Crucially it keeps a **sub-pixel accumulator**: a fractional step never gets
+    rounded away to zero, it accumulates until it moves a whole pixel. Without
+    this the cursor stalled several pixels short of the target on gentle settings
+    ("doesn't fully go to the color"). Within ``lock_px`` it lands exactly on the
+    target, so aim is pixel-accurate.
     """
-    cx, cy = get_cursor_pos()
-    rx = target_screen[0] - cx
-    ry = target_screen[1] - cy
 
-    tau = max(tau, 1e-3)
-    alpha = 1.0 - math.exp(-dt / tau)
-    dx = rx * alpha
-    dy = ry * alpha
+    def __init__(self):
+        self._ax = 0.0  # carried sub-pixel remainder
+        self._ay = 0.0
 
-    # Cap by speed (px per second) while preserving direction.
-    max_step = max_speed_px_s * dt
-    dist = math.hypot(dx, dy)
-    if dist > max_step and dist > 0:
-        s = max_step / dist
-        dx *= s
-        dy *= s
+    def reset(self) -> None:
+        self._ax = 0.0
+        self._ay = 0.0
 
-    # Carry sub-pixel remainder so slow glides don't stall at <1px/tick.
-    idx = int(dx) if abs(dx) >= 1 else (1 if dx > 0.5 else (-1 if dx < -0.5 else 0))
-    idy = int(dy) if abs(dy) >= 1 else (1 if dy > 0.5 else (-1 if dy < -0.5 else 0))
-    move_relative(idx, idy)
-    return get_cursor_pos()
+    def step(self, target_screen: Tuple[int, int], dt: float, tau: float,
+             max_speed_px_s: float, lock_px: float = 2.0) -> Tuple[int, int]:
+        cx, cy = get_cursor_pos()
+        rx = target_screen[0] - cx
+        ry = target_screen[1] - cy
+        dist = math.hypot(rx, ry)
+
+        # Close enough: land exactly on the target (imperceptible, pixel-perfect).
+        if dist <= lock_px:
+            self.reset()
+            move_relative(int(round(rx)), int(round(ry)))
+            return get_cursor_pos()
+
+        alpha = 1.0 - math.exp(-dt / max(tau, 1e-3))
+        sx = rx * alpha
+        sy = ry * alpha
+
+        # Cap by speed (px/sec) while preserving direction.
+        max_step = max_speed_px_s * dt
+        step = math.hypot(sx, sy)
+        if step > max_step and step > 0:
+            f = max_step / step
+            sx *= f
+            sy *= f
+
+        # Accumulate sub-pixel movement; emit only whole pixels, carry the rest.
+        self._ax += sx
+        self._ay += sy
+        mx = int(self._ax)   # trunc toward zero
+        my = int(self._ay)
+        self._ax -= mx
+        self._ay -= my
+        if mx or my:
+            move_relative(mx, my)
+        return get_cursor_pos()
 
 
 # --- Dwell click ----------------------------------------------------------

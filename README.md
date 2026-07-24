@@ -212,12 +212,30 @@ switch regions at any time.
 
 ## Testing
 
-Pure-logic pieces (segmentation math, config/color helpers) have unit tests that
-run without a display or camera:
+Pure-logic pieces (segmentation, color helpers, glider convergence, persistence)
+have unit tests that run without a display or camera:
 
 ```bash
 py -m pytest -q
 ```
+
+### Aim simulation
+
+`tools/aim_sim.py` drives the **real** engine (detection + movement threads,
+targeting, easing, dwell) against a synthetic colored target using a *virtual*
+cursor — no display, OBS, or real mouse. It measures how close the cursor gets to
+the color (static) and how well it follows a moving target (tracking):
+
+```bash
+py tools/aim_sim.py
+```
+
+Current results — static final error **~1 px** (settles ~0.4 s), moving-target
+error **~2 px** on default settings. This harness is how the "doesn't fully reach
+the color" bug (an easing step that rounded sub-pixel moves to zero and stalled
+~13 px short) was found and fixed. Accuracy comes from a sub-pixel accumulator
+with pixel-exact lock-on, plus a velocity **lead** that aims ahead of a moving
+target (and is disabled when the target is static, so it never costs precision).
 
 ## License
 
