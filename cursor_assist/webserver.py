@@ -237,6 +237,7 @@ class WebApp:
                 "detect_thin_border": s.detect_thin_border,
                 "pull_radius": s.pull_radius,
                 "show_overlay": s.show_overlay,
+                "overlay_radius": s.overlay_radius,
                 "suppress_mouse": s.suppress_mouse,
                 "body_part_detection": s.body_part_detection,
                 "active_region": s.active_region,

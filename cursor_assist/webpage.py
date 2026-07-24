@@ -186,8 +186,12 @@ PAGE = r"""<!doctype html>
     <div class="row"><label>Pull radius</label>
       <input type="range" data-key="pull_radius" min="0" max="1000" step="10">
       <span class="val"></span></div>
-    <div class="hint">Only assist toward colors within this circle around the
-      cursor (0 = whole screen).</div>
+    <div class="hint">Only assist toward colors within this radius of the cursor
+      (0 = whole screen).</div>
+    <div class="row"><label>Circle size</label>
+      <input type="range" data-key="overlay_radius" min="0" max="1000" step="10">
+      <span class="val"></span></div>
+    <div class="hint">Size of the drawn circle (0 = match the pull radius).</div>
   </div>
 
   <div class="card" style="animation-delay:.15s"><h2>Target colors</h2>

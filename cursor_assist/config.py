@@ -110,6 +110,7 @@ class AppState:
     # limit). Drawn on screen as the crosshair circle.
     pull_radius: int = 250
     show_overlay: bool = True        # draw the FOV circle over the cursor
+    overlay_radius: int = 0          # drawn circle size; 0 = match pull_radius
 
     # --- Input control ---------------------------------------------------
     suppress_mouse: bool = False     # block physical mouse movement while pulling

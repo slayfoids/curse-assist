@@ -35,6 +35,7 @@ _SCALAR_FIELDS = (
     "active_region",
     "pull_radius",
     "show_overlay",
+    "overlay_radius",
     "auto_click_enabled",
     "click_mode",
     "suppress_mouse",

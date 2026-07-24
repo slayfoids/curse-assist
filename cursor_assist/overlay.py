@@ -82,7 +82,9 @@ class CrosshairOverlay:
         self.canvas.delete("all")
         try:
             show = self.state.get("show_overlay")
-            r = int(self.state.get("pull_radius"))
+            # Circle size: explicit overlay_radius if set, else the pull radius.
+            r = int(self.state.get("overlay_radius")) or int(
+                self.state.get("pull_radius"))
             if show and r > 0:
                 x, y = self._cursor()
                 enabled = self.state.get("pull_enabled")
