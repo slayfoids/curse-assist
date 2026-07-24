@@ -28,9 +28,9 @@ from .detection import find_shapes, largest_figure
 from .mouse_block import MouseSuppressor
 from .targeting import TargetTracker
 
-MOVE_HZ = 180.0            # cursor easing rate
+MOVE_HZ = 240.0            # cursor easing rate (time-based, so mostly for polish)
 MOVE_DT = 1.0 / MOVE_HZ
-DETECT_MAX_HZ = 90.0       # cap detection so it doesn't peg a core
+DETECT_MAX_HZ = 240.0      # cap; real detection fps is limited by the source/CPU
 DETECT_MIN_DT = 1.0 / DETECT_MAX_HZ
 TARGET_STALE_S = 0.25      # ignore targets older than this
 
