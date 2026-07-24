@@ -173,10 +173,14 @@ class AssistController:
 
                 self._tracker.set_ema(snap.target_ema)
                 min_area = max(1, int(snap.min_contour_area * scale * scale))
-                shapes, _mask = find_shapes(small, snap.colors,
-                                            snap.detect_thin_border, min_area)
+                shapes, mask = find_shapes(small, snap.colors,
+                                           snap.detect_thin_border, min_area)
                 figure = largest_figure(shapes)
 
+                # "Circle size" drives the max-coverage snap; it falls back to
+                # the pull radius when the drawn circle matches it (0).
+                snap_r = (snap.overlay_radius if snap.overlay_radius > 0
+                          else snap.pull_radius)
                 target = self._tracker.pick(
                     shapes=shapes, figure=figure,
                     active_region=snap.active_region,
@@ -185,6 +189,11 @@ class AssistController:
                     scale=scale,
                     use_regions=snap.body_part_detection,
                     pull_radius=snap.pull_radius,
+                    mask=mask,
+                    lock_enabled=snap.lock_target,
+                    snap_enabled=snap.snap_to_best,
+                    snap_radius=snap_r,
+                    snap_after_ms=snap.snap_after_ms,
                 )
                 self._publish(target)
                 self._target_speed = self._tracker.speed()

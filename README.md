@@ -122,7 +122,8 @@ Cards: **Motion** (smoothness, max speed, target steadiness) · **Click** (how t
 click is issued: dwell / key / off, dwell time, radius, repeated clicks) ·
 **Assist area** (how large an area around the pointer the tool responds to, shown
 as a circle) · **Target colors** (one or more colors, picker, eyedropper,
-sensitivity, min area, thin-outline) · **Target region** (six buttons) ·
+sensitivity, min area, thin-outline) · **Targeting** (single-target lock,
+best-coverage snap) · **Target region** (six buttons) ·
 **Capture source** (Screen/OBS, monitor, region, detail) · **Detection area**
 (limit the search to a pixel box) · **Input control** (steady the pointer against
 tremor) · **Hotkeys** (all rebindable, with Record).
@@ -167,6 +168,9 @@ within which the tool offers guidance.
 | **Sensitivity** | How closely a pixel must match the chosen color (higher = matches a wider range). |
 | **Min area** | Ignores colored specks smaller than this (px²). |
 | **Detect thin outlines** | Detect colored *outlines*, not just filled color. |
+| **Lock onto one target** | Pick a single color blob and keep guiding toward *it* until it disappears (plus a short grace), then re-acquire. With several same-color targets on screen this prevents the pointer from drifting to the middle of the group or twitching between them. |
+| **Best-coverage snap** | After the pointer has rested on the color for the set time (default 1 s), aim is refined to the spot where the drawn circle (**Circle size**, falling back to the assist radius) covers the *most* target color. |
+| **Snap after (ms)** | How long the pointer must sit on the color before the best-coverage snap engages (200–3000 ms). |
 | **Body-part detection** | Off (default) = guide to the color directly. On = aid a body region of a drawn figure. |
 | **Target region** | When body-part detection is on, which region (Head/Torso/Arms/Legs) to aid. |
 | **Capture source** | Desktop screen (default) or an OBS virtual camera; monitor / region. |
@@ -188,9 +192,10 @@ within which the tool offers guidance.
 ```
  DETECTION thread (runs as fast as the source allows)
    screen / OBS vcam ─▶ (crop ROI) ─▶ downscale ─▶ HSV mask (all colors) ─▶ contours
-       ─▶ color mode: target the nearest matching color's center   (default)
+       ─▶ color mode: lock onto one blob, hold it until it's gone   (default)
        ─▶ body-part mode: split figure into regions, target the active one
-       ─▶ EMA smoothing ─▶ publishes the current target ─┐
+       ─▶ (after resting on color) snap to the max-coverage circle position
+       ─▶ teleport guard + deadband ─▶ EMA smoothing ─▶ publishes target ─┐
                                                           │  (shared target)
  MOVEMENT thread (~240 Hz, independent)                   ▼
    read latest target ─▶ time-based ease: new = cur + (target-cur)·α(dt)
@@ -205,6 +210,15 @@ downscaled frame for speed and only *publishes* a target; a slow detection frame
 no longer makes the pointer stutter. Smoothing the **target** (not the pointer)
 removes detection jitter; the speed cap prevents any sudden jump.
 
+**Why it's stable:** the tracker **locks onto one blob** and re-identifies it
+each frame by position, so the choice of target can't flip-flop between several
+same-color blobs (the cause of mid-group drift and random spasms). A **teleport
+guard** treats impossibly fast target jumps as a new target — resetting velocity
+and smoothing instead of feeding them into motion prediction — and prediction
+only engages after the velocity estimate has warmed up on a target. A small
+**deadband** ignores sub-pixel detection wiggle so a still target is rock
+steady.
+
 ### Modules
 
 | File | Responsibility |
@@ -213,7 +227,7 @@ removes detection jitter; the speed cap prevents any sudden jump.
 | `capture.py` | `mss` screen capture and OBS virtual-camera capture. |
 | `detection.py` | HSV masking (multi-color), contour finding, shape classification. |
 | `segmentation.py` | Split a figure's bounding box into named body regions. |
-| `targeting.py` | Nearest in-region contour point + EMA (downscale-aware). |
+| `targeting.py` | Target lock, best-coverage snap, teleport guard, EMA + lead (downscale-aware). |
 | `cursor.py` | `SendInput` relative move + click; time-based ease; dwell machine. |
 | `mouse_block.py` | Optional low-level hook to steady the pointer against tremor. |
 | `overlay.py` | Transparent click-through assist-area circle overlay. |

@@ -232,6 +232,22 @@ PAGE = r"""<!doctype html>
       <span class="track"></span></label></div>
   </div>
 
+  <div class="card" style="animation-delay:.18s"><h2>Targeting</h2>
+    <div class="toggle"><span>Lock onto one target <span style="color:var(--muted);font-size:11px">(hold it until it's gone)</span></span>
+      <label class="switch"><input type="checkbox" data-key="lock_target">
+      <span class="track"></span></label></div>
+    <div class="hint">With several same-color targets, stick to a single one
+      instead of drifting to the middle of the group.</div>
+    <div class="toggle"><span>Best-coverage snap <span style="color:var(--muted);font-size:11px">(after holding on color)</span></span>
+      <label class="switch"><input type="checkbox" data-key="snap_to_best">
+      <span class="track"></span></label></div>
+    <div class="row" id="snapRow"><label>Snap after (ms)</label>
+      <input type="range" data-key="snap_after_ms" min="200" max="3000" step="100">
+      <span class="val"></span></div>
+    <div class="hint">After sitting on the color this long, aim where the
+      circle (Circle size) covers the most color.</div>
+  </div>
+
   <div class="card" style="animation-delay:.2s"><h2>Target region</h2>
     <div class="toggle"><span>Body-part detection <span style="color:var(--muted);font-size:11px">(off = track color directly)</span></span>
       <label class="switch"><input type="checkbox" data-key="body_part_detection">
@@ -382,6 +398,7 @@ function render(){
   $('#repeatRow').style.display=(cm==='dwell')?'':'none';
   $('#intervalRow').style.display=(cm==='dwell'&&S.click_repeat)?'':'none';
   $('#triggerRow').style.display=(cm==='trigger')?'':'none';
+  $('#snapRow').style.display=S.snap_to_best?'':'none';
   $('#clickHint').textContent=cm==='dwell'?'Clicks after holding on target.':
     cm==='trigger'?'Press the trigger key to click instantly.':
     'No auto-click — click manually.';

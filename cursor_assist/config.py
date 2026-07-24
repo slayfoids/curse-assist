@@ -98,6 +98,18 @@ class AppState:
     roi_w: int = 0
     roi_h: int = 0
 
+    # --- Targeting stability ---------------------------------------------
+    # Lock onto one blob and keep pulling toward it until it disappears,
+    # instead of re-picking the nearest blob every frame. Prevents the cursor
+    # from settling in the middle of several same-color targets and stops the
+    # jitter/spasms caused by the pick flip-flopping between blobs.
+    lock_target: bool = True
+    # After the cursor has been on the target color for snap_after_ms, aim at
+    # the position where a circle of the "circle size" radius (overlay_radius,
+    # falling back to pull_radius) covers the most target color.
+    snap_to_best: bool = True
+    snap_after_ms: int = 1000
+
     # --- Region selection ------------------------------------------------
     # Off = just track the color directly. On = split the figure into body
     # regions and only target the active one (Head/Torso/Arms/Legs).
