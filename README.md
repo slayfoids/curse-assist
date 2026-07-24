@@ -27,6 +27,10 @@ py -m pip install -r requirements.txt
 If `keyboard` fails to install (it needs admin on some systems), the app still
 runs — the global hotkey falls back to a window-focused key binding.
 
+> **New to this / setting it up for someone else?** Follow the full step-by-step
+> [**INSTALL.md**](INSTALL.md) — it covers installing Python, getting the
+> project, and running in background mode, with nothing assumed.
+
 ## Run
 
 ```bash
@@ -34,6 +38,29 @@ py -m cursor_assist
 ```
 
 or double-click / run `run.py`.
+
+### Run in the background (no console window)
+
+Day-to-day use, with **no terminal window** left open — just the control panel.
+Each launch gets a **randomly generated instance name** (also the process name in
+Task Manager). Double-click **`Start Cursor Assist (background).cmd`**, or:
+
+```bash
+py background\start_hidden.py
+```
+
+Stop it with **`Stop Cursor Assist.cmd`**, or:
+
+```bash
+py background\stop_hidden.py
+```
+
+Under the hood this runs the app with `pythonw.exe` (the windowless interpreter)
+via a randomly named copy, and records the name + PID in `.runtime\instance.json`
+so it's easy to find and stop. It is transparent, not stealthy — the control
+panel stays visible and nothing auto-starts at boot unless you set that up
+yourself (see [INSTALL.md](INSTALL.md#step-7--optional-start-automatically-when-you-log-in)).
+See [background/start_hidden.py](background/start_hidden.py) for details.
 
 ### Capture options
 

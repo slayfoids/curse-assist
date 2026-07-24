@@ -27,3 +27,6 @@ Desktop.ini
 *.png
 *.jpg
 debug_frames/
+
+# Background-mode runtime state (random-named interpreter copy + instance.json)
+.runtime/
