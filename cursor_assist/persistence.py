@@ -31,6 +31,7 @@ _SCALAR_FIELDS = (
     "roi_y",
     "roi_w",
     "roi_h",
+    "body_part_detection",
     "active_region",
     "auto_click_enabled",
     "suppress_mouse",

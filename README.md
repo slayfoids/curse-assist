@@ -112,9 +112,11 @@ mouse) · **Hotkeys** (both rebindable, with Record).
 1. Launch the app — the panel opens in your browser. Start OBS's virtual camera.
 2. Add one or more **Target colors**: **＋ Pick** a color, or use the
    **⦿ Eyedropper** and click the exact pixel on screen you want to match. Add as
-   many colors as you like. Tune **Sensitivity** until the status dot turns green.
-3. Pick a **Target region** — Head / Torso / L-Arm / R-Arm / L-Leg / R-Leg. The
-   cursor is only pulled toward contour points inside that region.
+   many colors as you like. Tune **Sensitivity** until the status dot turns green
+   — detection runs live even before you turn the pull on, so you can tune first.
+3. By default it **just tracks the color** (pulls toward the colored blob nearest
+   the cursor). Turn on **Body-part detection** only if you want to target a
+   specific region (Head / Torso / Arms / Legs) of a figure.
 4. Toggle **PULL** on (button or your **Toggle pull** hotkey, default **F8**).
 5. Move roughly toward the target; the cursor glides the rest of the way. Hold
    near it and, after the **Dwell time**, a click fires automatically.
@@ -135,7 +137,8 @@ Turn **Auto dwell-click** off to keep the pull assist but click manually.
 | **Sensitivity** | Global HSV tolerance applied to all colors (higher = matches more). |
 | **Min area** | Ignores colored specks smaller than this (px²). |
 | **Detect thin outlines** | Detect colored *outlines*, not just filled color. |
-| **Target region** | Restricts the pull to one body region of the figure. |
+| **Body-part detection** | Off (default) = track the color directly. On = target a body region of a figure. |
+| **Target region** | When body-part detection is on, which region (Head/Torso/Arms/Legs) to aim at. |
 | **Capture source** | OBS virtual cam (recommended) or desktop; monitor / region / OBS index. |
 | **Detail (speed)** | Detection downscale — lower = faster, higher = more detail. |
 | **Detection area** | Restrict color detection to a pixel box (X/Y/W/H); 0 0 0 0 = whole frame. Works for OBS too. |
@@ -154,8 +157,9 @@ Turn **Auto dwell-click** off to keep the pull assist but click manually.
 
 ```
  DETECTION thread (runs as fast as the source allows)
-   OBS vcam / mss ─▶ downscale ─▶ HSV mask (all colors) ─▶ findContours
-       ─▶ largest = figure ─▶ body-region split ─▶ nearest point in region
+   OBS vcam / mss ─▶ (crop ROI) ─▶ downscale ─▶ HSV mask (all colors) ─▶ contours
+       ─▶ color mode: aim at nearest color blob's center   (default)
+       ─▶ body-part mode: split figure into regions, aim in the active one
        ─▶ EMA smoothing ─▶ publishes the current target ─┐
                                                           │  (shared target)
  MOVEMENT thread (~180 Hz, independent)                   ▼

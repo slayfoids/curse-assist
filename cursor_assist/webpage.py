@@ -193,7 +193,11 @@ PAGE = r"""<!doctype html>
   </div>
 
   <div class="card" style="animation-delay:.2s"><h2>Target region</h2>
-    <div class="grid3" id="regions"></div>
+    <div class="toggle"><span>Body-part detection <span style="color:var(--muted);font-size:11px">(off = track color directly)</span></span>
+      <label class="switch"><input type="checkbox" data-key="body_part_detection">
+      <span class="track"></span></label></div>
+    <div class="grid3" id="regions" style="margin-top:8px"></div>
+    <div class="hint" id="regionHint"></div>
   </div>
 
   <div class="card" style="animation-delay:.25s"><h2>Capture source</h2>
@@ -311,7 +315,10 @@ function renderRegions(){
   if(box.childElementCount!==(S.regions||[]).length){box.innerHTML='';
     (S.regions||[]).forEach(r=>{const b=document.createElement('div');b.className='chip';
       b.textContent=r;b.dataset.r=r;b.onclick=()=>act('set_region',{region:r}).then(render);box.appendChild(b);});}
-  $$('#regions .chip').forEach(c=>c.classList.toggle('sel',c.dataset.r===S.active_region));
+  const bp=!!S.body_part_detection;
+  $$('#regions .chip').forEach(c=>c.classList.toggle('sel',bp&&c.dataset.r===S.active_region));
+  box.style.opacity=bp?'1':'.4';box.style.pointerEvents=bp?'auto':'none';
+  $('#regionHint').textContent=bp?'':'Regions apply only with body-part detection on.';
 }
 function render(){
   // status

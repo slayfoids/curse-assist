@@ -224,6 +224,7 @@ class WebApp:
                 "roi_w": s.roi_w, "roi_h": s.roi_h,
                 "detect_thin_border": s.detect_thin_border,
                 "suppress_mouse": s.suppress_mouse,
+                "body_part_detection": s.body_part_detection,
                 "active_region": s.active_region,
                 "regions": REGIONS,
                 "colors": [_hsv_to_hex(c) for c in s.colors],

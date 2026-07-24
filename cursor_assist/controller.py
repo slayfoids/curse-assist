@@ -121,16 +121,16 @@ class AssistController:
         fps = 30.0
         while not self._stop.is_set():
             t0 = time.perf_counter()
-
-            if not self._state.get("pull_enabled"):
-                self._tracker.reset()
-                self._publish(None)
-                self._state.set("last_target_found", False)
-                time.sleep(0.03)
-                continue
+            pulling = self._state.get("pull_enabled")
 
             try:
                 snap = self._state.snapshot()
+                # Nothing to look for yet: don't open the camera, just idle.
+                if not snap.colors:
+                    self._publish(None)
+                    self._state.set("last_target_found", False)
+                    time.sleep(0.1)
+                    continue
                 capture = self._ensure_capture(snap)
                 frame = capture.grab()
                 if frame is None:
@@ -168,6 +168,7 @@ class AssistController:
                     cursor_screen=cur.get_cursor_pos(),
                     capture_origin=origin,
                     scale=scale,
+                    use_regions=snap.body_part_detection,
                 )
                 self._publish(target)
                 self._state.set("last_target_found", target is not None)
@@ -182,9 +183,12 @@ class AssistController:
                 self._capture_key = None
                 time.sleep(0.3)
 
+            # Full rate while pulling; ~12 Hz when idle (enough for live
+            # "target found" feedback while tuning, without pegging a core).
+            pace = DETECT_MIN_DT if pulling else (1.0 / 12.0)
             dt = time.perf_counter() - t0
-            if dt < DETECT_MIN_DT:
-                time.sleep(DETECT_MIN_DT - dt)
+            if dt < pace:
+                time.sleep(pace - dt)
             dt = time.perf_counter() - t0
             if dt > 0:
                 fps = 0.9 * fps + 0.1 * (1.0 / dt)

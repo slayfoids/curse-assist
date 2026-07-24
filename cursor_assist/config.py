@@ -94,6 +94,9 @@ class AppState:
     roi_h: int = 0
 
     # --- Region selection ------------------------------------------------
+    # Off = just track the color directly. On = split the figure into body
+    # regions and only target the active one (Head/Torso/Arms/Legs).
+    body_part_detection: bool = False
     active_region: str = "Torso"
 
     # --- Capture ---------------------------------------------------------
