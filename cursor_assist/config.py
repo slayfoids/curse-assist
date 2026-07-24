@@ -88,6 +88,10 @@ class AppState:
     # --- Capture ---------------------------------------------------------
     capture: CaptureConfig = field(default_factory=CaptureConfig)
 
+    # --- Hotkeys (editable in the panel; names use the `keyboard` syntax) -
+    hotkey_show_panel: str = "right shift"     # show/hide the settings panel
+    hotkey_toggle_pull: str = "ctrl+alt+space"  # turn the pull assist on/off
+
     # --- Loop status (loop -> GUI, read-only for the GUI) ----------------
     loop_fps: float = 0.0
     last_target_found: bool = False

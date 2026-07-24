@@ -82,8 +82,13 @@ cloned it (e.g. `C:\cursor-assist`).
 py -m cursor_assist
 ```
 
-The always-on-top **control panel** should appear. A console window stays open
-too — that is expected in this mode; we remove it in Step 6.
+The always-on-top **control panel** should appear — a small dark window with
+sections for Assist, Click, Target color, Region, Capture, and Hotkeys. A console
+window stays open too — that is expected in this mode; we remove it in Step 6.
+
+> **Press Right Shift at any time to show or hide the panel.** All settings save
+> automatically and come back next time you launch. (Right Shift also still works
+> as a normal Shift key — if that bothers you, rebind it in the *Hotkeys* section.)
 
 Quick check:
 1. Click **Pick color…** and choose the color of the shape/outline you want to
