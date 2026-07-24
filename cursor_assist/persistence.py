@@ -23,6 +23,8 @@ _SCALAR_FIELDS = (
     "target_ema",
     "dwell_ms",
     "click_radius",
+    "click_repeat",
+    "click_interval_ms",
     "detect_thin_border",
     "min_contour_area",
     "sensitivity",

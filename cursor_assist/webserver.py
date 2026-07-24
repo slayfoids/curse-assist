@@ -229,6 +229,8 @@ class WebApp:
                 "target_ema": s.target_ema,
                 "dwell_ms": s.dwell_ms,
                 "click_radius": s.click_radius,
+                "click_repeat": s.click_repeat,
+                "click_interval_ms": s.click_interval_ms,
                 "sensitivity": s.sensitivity,
                 "min_contour_area": s.min_contour_area,
                 "detect_scale": s.detect_scale,

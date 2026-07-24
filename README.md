@@ -132,12 +132,14 @@ cursor within which the assist engages.
 |---|---|
 | **PULL ON/OFF** | Master toggle for the pull assist (also the *Toggle pull* hotkey). |
 | **Smoothness** | 0 = snappy, 1 = long buttery glide. Motion is frame-rate independent. |
-| **Max speed** | Cap on cursor speed (px/sec) so a big jump glides in, never snaps. |
+| **Max speed** | Cap on cursor speed (px/sec, up to 30000). Higher = catches fast-moving colors and keeps them centered. |
 | **Target steadiness** | Jitter smoothing on the target point (EMA). |
 | **Click mode** | **Dwell** (auto-click after holding on target), **Trigger key** (press a key to click instantly), or **Off** (manual). |
 | **Dwell time** | In dwell mode, how long to hold before a click fires (50–1500 ms). |
 | **Trigger key** | In trigger mode, the (recordable) key that fires an instant click. |
 | **Click radius** | How close counts as "on target" for dwell. |
+| **Repeat clicks** | Keep auto-clicking while on target (auto-clicker), at the chosen interval. |
+| **Click interval** | Time between repeated clicks (30–1000 ms). |
 | **Pull radius** | FOV: only assist toward colors within this circle of the cursor (0 = whole screen). |
 | **Show crosshair circle** | Draw the FOV circle over the cursor (green when locked on). |
 | **Target colors** | Add multiple colors via picker or on-screen **eyedropper**; click a swatch to remove. |

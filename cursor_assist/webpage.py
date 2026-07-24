@@ -154,7 +154,7 @@ PAGE = r"""<!doctype html>
       <input type="range" data-key="smoothness" min="0" max="1" step="0.05">
       <span class="val"></span></div>
     <div class="row"><label>Max speed</label>
-      <input type="range" data-key="max_speed" min="500" max="8000" step="100">
+      <input type="range" data-key="max_speed" min="500" max="30000" step="250">
       <span class="val"></span></div>
     <div class="row"><label>Target steadiness</label>
       <input type="range" data-key="target_ema" min="0.05" max="0.9" step="0.05">
@@ -172,6 +172,12 @@ PAGE = r"""<!doctype html>
       <span class="val"></span></div>
     <div class="row"><label>Click radius</label>
       <input type="range" data-key="click_radius" min="5" max="80" step="1">
+      <span class="val"></span></div>
+    <div class="toggle" id="repeatRow"><span>Repeat clicks (auto-fire on target)</span>
+      <label class="switch"><input type="checkbox" data-key="click_repeat">
+      <span class="track"></span></label></div>
+    <div class="row" id="intervalRow"><label>Click interval (ms)</label>
+      <input type="range" data-key="click_interval_ms" min="30" max="1000" step="10">
       <span class="val"></span></div>
     <div class="hk" id="triggerRow"><label>Trigger key</label>
       <input class="txt" id="hk_trigger" style="width:auto">
@@ -359,6 +365,8 @@ function render(){
   const cm=S.click_mode||'dwell';
   $$('#clickmode button').forEach(b=>b.classList.toggle('sel',b.dataset.mode===cm));
   $('#dwellRow').style.display=(cm==='dwell')?'':'none';
+  $('#repeatRow').style.display=(cm==='dwell')?'':'none';
+  $('#intervalRow').style.display=(cm==='dwell'&&S.click_repeat)?'':'none';
   $('#triggerRow').style.display=(cm==='trigger')?'':'none';
   $('#clickHint').textContent=cm==='dwell'?'Clicks after holding on target.':
     cm==='trigger'?'Press the trigger key to click instantly.':

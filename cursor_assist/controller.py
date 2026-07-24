@@ -254,6 +254,8 @@ class AssistController:
                 radius=self._state.get("click_radius"),
                 dwell_ms=self._state.get("dwell_ms"),
                 auto_click=(self._state.get("click_mode") == "dwell"),
+                repeat=self._state.get("click_repeat"),
+                interval_ms=self._state.get("click_interval_ms"),
             )
 
             slack = MOVE_DT - (time.perf_counter() - now)

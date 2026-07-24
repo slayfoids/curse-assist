@@ -146,6 +146,7 @@ class DwellClicker:
     def __init__(self, on_start=None, on_fire=None):
         self._entered_at: Optional[float] = None
         self._armed = True  # re-arm required after each fire to avoid repeats
+        self._last_fire = 0.0
         self._on_start = on_start
         self._on_fire = on_fire
 
@@ -160,8 +161,16 @@ class DwellClicker:
         radius: int,
         dwell_ms: int,
         auto_click: bool,
+        repeat: bool = False,
+        interval_ms: int = 120,
     ) -> bool:
-        """Advance the dwell state one frame. Returns True if a click fired."""
+        """Advance the dwell state one frame. Returns True if a click fired.
+
+        With ``repeat`` on, once the initial dwell fires it keeps auto-clicking
+        every ``interval_ms`` while the cursor stays within the radius (an
+        auto-clicker). With it off, it clicks once and won't fire again until the
+        cursor leaves and re-enters the radius.
+        """
         if target_screen is None or not auto_click:
             self._entered_at = None
             return False
@@ -183,10 +192,23 @@ class DwellClicker:
                 self._on_start()
             return False
 
-        if self._armed and (now - self._entered_at) * 1000.0 >= dwell_ms:
+        held_ms = (now - self._entered_at) * 1000.0
+
+        # First click after the dwell time.
+        if self._armed and held_ms >= dwell_ms:
             click_left()
-            self._armed = False  # don't machine-gun; require leaving the radius
+            self._armed = False
+            self._last_fire = now
             if self._on_fire:
                 self._on_fire()
             return True
+
+        # Subsequent auto-fire clicks while held (repeat mode only).
+        if repeat and not self._armed and held_ms >= dwell_ms:
+            if (now - self._last_fire) * 1000.0 >= max(20, interval_ms):
+                click_left()
+                self._last_fire = now
+                if self._on_fire:
+                    self._on_fire()
+                return True
         return False

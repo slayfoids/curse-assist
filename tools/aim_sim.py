@@ -197,9 +197,9 @@ def report(name, smoothness, max_speed, ema, fps):
 def main():
     print(f"Aim simulation on a {W}x{H} virtual screen, target r={RADIUS}px.")
     # Screen capture (the mode actually used) at realistic frame rates.
-    m1, mx1 = report("DEFAULT", 0.22, 7000, 0.45, fps=60)
-    m2, mx2 = report("DEFAULT @30fps", 0.22, 7000, 0.45, fps=30)
-    m3, mx3 = report("STRONG (snappy)", 0.12, 8000, 0.7, fps=60)
+    m1, mx1 = report("DEFAULT", 0.22, 12000, 0.45, fps=60)
+    m2, mx2 = report("DEFAULT @30fps", 0.22, 12000, 0.45, fps=30)
+    m3, mx3 = report("STRONG (snappy)", 0.12, 20000, 0.7, fps=60)
 
     ok = all(m <= 2.5 for m in (m1, m2, m3)) and all(
         mx <= 5.0 for mx in (mx1, mx2, mx3))

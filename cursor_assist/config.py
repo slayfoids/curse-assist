@@ -75,12 +75,14 @@ class AppState:
     # Motion is time-based and frame-rate independent (see controller). These
     # tune *feel*, not per-frame steps, so it stays smooth regardless of FPS.
     smoothness: float = 0.22         # 0 = snappy .. 1 = very smooth (glide)
-    max_speed: int = 7000            # px/second cap (stops overshoot on jumps)
+    max_speed: int = 12000           # px/second cap (higher = catches fast colors)
     target_ema: float = 0.45         # smoothing applied to the *target* point
 
     # --- Dwell click -----------------------------------------------------
     dwell_ms: int = 300              # how long to hold on target before click
     click_radius: int = 25           # px radius the cursor must hold within
+    click_repeat: bool = False       # keep auto-clicking while on target
+    click_interval_ms: int = 120     # time between repeated clicks
 
     # --- Detection -------------------------------------------------------
     colors: List[ColorTarget] = field(default_factory=lambda: [ColorTarget()])
