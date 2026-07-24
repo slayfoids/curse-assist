@@ -154,6 +154,8 @@ within which the tool offers guidance.
 | Control | What it does |
 |---|---|
 | **Guidance ON/OFF** | Master toggle for cursor guidance (also the *Toggle guidance* hotkey). |
+| **Activation mode** | **Toggle** (hotkey flips guidance on/off) or **Hold** (guidance is live only while a chosen key or mouse button — e.g. a side button — is physically held; releasing it stops the pull and cancels any pending dwell click instantly). |
+| **Audio cues** | Two high-pitched beeps when guidance activates, two low-pitched beeps when it deactivates — from any path (hotkey, hold button, panel). Can be turned off. |
 | **Smoothness** | 0 = responsive, 1 = long gentle glide. Motion is frame-rate independent. |
 | **Max speed** | Cap on how fast the pointer moves (px/sec, up to 100000). Higher = keeps up with a color that moves quickly. |
 | **Target steadiness** | Smooths out detection jitter so the pointer doesn't wobble. |
@@ -257,6 +259,16 @@ switch regions at any time.
   capture the region you actually work in, for the tightest mapping.
 - The tool assumes the largest colored contour is the figure. Busy scenes with
   large same-colored areas may need a tighter color/tolerance or a capture region.
+
+### Live-motion simulation suite
+
+`tests/test_sim_scenarios.py` drives the **real** engine (detection + movement
+threads) against synthetic scenes in real time: static shapes of several kinds
+and sizes (discs, square, triangle, thin ring), approaches from various
+distances, linear tracking at 200/500/900 px/s, fast circular pursuit, lock
+stability next to a same-color distractor, best-coverage snap on a concave
+shape, and Head/Torso/Feet attraction on a humanoid figure moving at 250 px/s.
+Runs as part of `pytest` (~30 s).
 
 ## Testing
 

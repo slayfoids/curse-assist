@@ -301,7 +301,31 @@ PAGE = r"""<!doctype html>
 
   <div class="section"><span class="tag">Guidance &amp; Motion</span><span class="rule"></span></div>
 
-  <div class="card s4" style="animation-delay:.06s"><h2><span class="ico">〜</span>Motion</h2>
+  <div class="card s3" style="animation-delay:.05s"><h2><span class="ico">⚡</span>Activation</h2>
+    <div class="seg" id="actmode">
+      <button data-am="toggle">Toggle</button>
+      <button data-am="hold">Hold</button>
+    </div>
+    <div id="holdRow">
+      <div class="hk"><label>Hold button</label>
+        <input class="txt" id="hk_hold" style="width:auto">
+        <button class="btn" onclick="recordHold()">Record</button></div>
+      <div class="btns" style="margin:6px 0 8px">
+        <button class="btn" onclick="setHold('MB4')">Mouse4</button>
+        <button class="btn" onclick="setHold('MB5')">Mouse5</button>
+        <button class="btn" onclick="setHold('MMB')">MMB</button>
+        <button class="btn" onclick="setHold('RMB')">RMB</button>
+        <button class="btn" onclick="setHold('right ctrl')">R-Ctrl</button>
+        <button class="btn" onclick="setHold('space')">Space</button>
+      </div>
+    </div>
+    <div class="toggle"><span>Audio cues<br><small>2 high beeps = on · 2 low = off</small></span>
+      <label class="switch"><input type="checkbox" data-key="audio_cues">
+      <span class="track"></span></label></div>
+    <div class="hint" id="actHint"></div>
+  </div>
+
+  <div class="card s3" style="animation-delay:.06s"><h2><span class="ico">〜</span>Motion</h2>
     <div class="row"><label>Smoothness</label>
       <input type="range" data-key="smoothness" min="0" max="1" step="0.05">
       <span class="val"></span></div>
@@ -315,7 +339,7 @@ PAGE = r"""<!doctype html>
       feel, not speed of detection.</div>
   </div>
 
-  <div class="card s4" style="animation-delay:.09s"><h2><span class="ico">⌖</span>Targeting</h2>
+  <div class="card s3" style="animation-delay:.09s"><h2><span class="ico">⌖</span>Targeting</h2>
     <div class="toggle"><span>Lock onto one target<br><small>hold it until it's gone</small></span>
       <label class="switch"><input type="checkbox" data-key="lock_target">
       <span class="track"></span></label></div>
@@ -329,7 +353,7 @@ PAGE = r"""<!doctype html>
       targets. Snap re-aims to where the circle covers the most color.</div>
   </div>
 
-  <div class="card s4" style="animation-delay:.12s"><h2><span class="ico">◎</span>Field of view</h2>
+  <div class="card s3" style="animation-delay:.12s"><h2><span class="ico">◎</span>Field of view</h2>
     <div class="toggle"><span>Show crosshair circle</span>
       <label class="switch"><input type="checkbox" data-key="show_overlay">
       <span class="track"></span></label></div>
@@ -531,6 +555,14 @@ $('#picker').addEventListener('change',e=>act('add_color',{hex:e.target.value}).
 $$('#seg button').forEach(b=>b.onclick=()=>act('set_source',{source:b.dataset.src}).then(load));
 // click-mode segmented
 $$('#clickmode button').forEach(b=>b.onclick=()=>setKey('click_mode',b.dataset.mode).then(load));
+// activation-mode segmented
+$$('#actmode button').forEach(b=>b.onclick=()=>setKey('activation_mode',b.dataset.am).then(load));
+function setHold(t){$('#hk_hold').value=t;setKey('hotkey_hold',t).then(load);flash('hold button set to '+t);}
+$('#hk_hold').addEventListener('change',e=>{const v=e.target.value.trim();
+  if(v)setKey('hotkey_hold',v).then(load);});
+async function recordHold(){flash('press the key to hold…');
+  const r=await act('record_hotkey');
+  if(r&&r.hotkey){setHold(r.hotkey);}else flash("recording needs the 'keyboard' package");}
 // remember focus so polling doesn't stomp typed text
 $$('input.txt').forEach(el=>{el.addEventListener('focus',()=>focused=el);
   el.addEventListener('blur',()=>{if(focused===el)focused=null;});});
@@ -622,8 +654,16 @@ function render(){
   st.textContent=S.target_found?'locked':'none';
   st.className='v '+(S.target_found?'ok':'bad');
   $('#statMode').textContent=({dwell:'Dwell',trigger:'Trigger',off:'Manual'})[S.click_mode]||'—';
-  const on=!!S.pull_enabled, p=$('#power');
-  p.innerHTML='PULL&nbsp;'+(on?'ON':'OFF');p.classList.toggle('on',on);
+  const on=!!S.pull_enabled, p=$('#power'), hold=S.activation_mode==='hold';
+  p.innerHTML=hold?(on?'HOLDING&nbsp;— ACTIVE':'HOLD&nbsp;'+esc(S.hotkey_hold||'?').toUpperCase())
+                  :('PULL&nbsp;'+(on?'ON':'OFF'));
+  p.classList.toggle('on',on);
+  // activation card
+  $$('#actmode button').forEach(b=>b.classList.toggle('sel',b.dataset.am===(S.activation_mode||'toggle')));
+  $('#holdRow').style.display=hold?'':'none';
+  $('#actHint').textContent=hold
+    ?'Pull is live only while the hold button is pressed. The toggle hotkey still works as an override.'
+    :'Hotkey / button flips the pull on and off.';
   if(!dragging&&S.error){/*keep*/}
   // segmented + region
   $$('#seg button').forEach(b=>b.classList.toggle('sel',b.dataset.src===(S.capture||{}).source));
@@ -650,7 +690,7 @@ function fillStatic(){
   set('#cap_left',c.left);set('#cap_top',c.top);set('#cap_width',c.width);set('#cap_height',c.height);
   set('#roi_x',S.roi_x);set('#roi_y',S.roi_y);set('#roi_w',S.roi_w);set('#roi_h',S.roi_h);
   set('#hk_show',S.hotkey_show_panel);set('#hk_pull',S.hotkey_toggle_pull);
-  set('#hk_trigger',S.hotkey_trigger);
+  set('#hk_trigger',S.hotkey_trigger);set('#hk_hold',S.hotkey_hold);
 }
 async function load(){S=await fetch('/api/state').then(r=>r.json());fillStatic();render();}
 async function poll(){try{S=await fetch('/api/state').then(r=>r.json());

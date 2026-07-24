@@ -77,6 +77,7 @@ class WebApp:
         self._eyedrop_thread: Optional[threading.Thread] = None
         self._hotkey_handles: list = []
         self._mouse_hooks: list = []
+        self._key_hooks: list = []   # keyboard.hook_key handles (hold mode)
         self._httpd: Optional[ThreadingHTTPServer] = None
         self.quit_event = threading.Event()  # set when the app is shutting down
         self._stopped = False
@@ -128,6 +129,36 @@ class WebApp:
             winsound.Beep(880, 60)
         except Exception:
             pass
+
+    def _set_pull(self, value: bool) -> None:
+        """Single gateway for turning the pull on/off: state + audio cue.
+
+        Every path (toggle hotkey, hold button press/release, UI button, API)
+        goes through here so the on/off beeps always fire exactly once per
+        actual change.
+        """
+        value = bool(value)
+        with self.state.lock:
+            if self.state.pull_enabled == value:
+                return
+            self.state.pull_enabled = value
+        self._pull_cue(value)
+
+    def _pull_cue(self, on: bool) -> None:
+        """Two high-pitched beeps when activated, two low-pitched when off."""
+        if not self.state.get("audio_cues"):
+            return
+        def _play():
+            try:
+                import time as _t
+                import winsound
+                freq = 1400 if on else 440
+                for _ in range(2):
+                    winsound.Beep(freq, 90)
+                    _t.sleep(0.045)
+            except Exception:
+                pass
+        threading.Thread(target=_play, name="pull-cue", daemon=True).start()
 
     def _on_error(self, exc: Exception) -> None:
         self._last_error = str(exc)
@@ -198,8 +229,24 @@ class WebApp:
                 lambda: webbrowser.open(self.url)))
             self._hotkey_handles.append(keyboard.add_hotkey(
                 self.state.get("hotkey_toggle_pull"),
-                lambda: self.state.set("pull_enabled",
-                                       not self.state.get("pull_enabled"))))
+                lambda: self._set_pull(not self.state.get("pull_enabled"))))
+            # Hold-to-activate: the pull is live only while the chosen key or
+            # mouse button is physically held down.
+            if self.state.get("activation_mode") == "hold":
+                hold = self.state.get("hotkey_hold")
+                mouse_btn = MOUSE_TOKENS.get(hold)
+                if mouse_btn:
+                    import mouse
+                    self._mouse_hooks.append(mouse.on_button(
+                        lambda: self._set_pull(True),
+                        buttons=(mouse_btn,), types=("down",)))
+                    self._mouse_hooks.append(mouse.on_button(
+                        lambda: self._set_pull(False),
+                        buttons=(mouse_btn,), types=("up",)))
+                elif hold:
+                    self._key_hooks.append(keyboard.hook_key(
+                        hold,
+                        lambda e: self._set_pull(e.event_type == "down")))
             # Instant-click trigger, only while in "trigger" click mode. The
             # trigger can be a keyboard key/combo or a mouse button.
             trig = self.state.get("hotkey_trigger")
@@ -224,9 +271,15 @@ class WebApp:
                     keyboard.remove_hotkey(h)
                 except (KeyError, ValueError):
                     pass
+            for h in self._key_hooks:
+                try:
+                    keyboard.unhook(h)
+                except (KeyError, ValueError):
+                    pass
         except Exception:
             pass
         self._hotkey_handles = []
+        self._key_hooks = []
         try:
             import mouse
             for h in self._mouse_hooks:
@@ -251,6 +304,9 @@ class WebApp:
             s = self.state
             return {
                 "pull_enabled": s.pull_enabled,
+                "activation_mode": s.activation_mode,
+                "hotkey_hold": s.hotkey_hold,
+                "audio_cues": s.audio_cues,
                 "auto_click_enabled": s.auto_click_enabled,
                 "click_mode": s.click_mode,
                 "smoothness": s.smoothness,
@@ -301,6 +357,21 @@ class WebApp:
             self._apply_sensitivity(int(value))
             self._save()
             return
+        if name == "activation_mode":
+            if value not in ("toggle", "hold"):
+                return
+            self.state.set("activation_mode", value)
+            # Entering/leaving hold mode: start from OFF for safety, then
+            # rebind so the hold hooks appear/disappear.
+            self._set_pull(False)
+            self._register_hotkeys()
+            self._save()
+            return
+        if name == "hotkey_hold":
+            self.state.set("hotkey_hold", str(value))
+            self._register_hotkeys()
+            self._save()
+            return
         with self.state.lock:
             if not hasattr(self.state, name):
                 return
@@ -323,9 +394,9 @@ class WebApp:
     def do_action(self, data: dict):
         action = data.get("action")
         if action == "toggle_pull":
-            self.state.set("pull_enabled", not self.state.get("pull_enabled"))
+            self._set_pull(not self.state.get("pull_enabled"))
         elif action == "set_pull":
-            self.state.set("pull_enabled", bool(data.get("value")))
+            self._set_pull(bool(data.get("value")))
         elif action == "set_region":
             r = data.get("region")
             if r in REGIONS:

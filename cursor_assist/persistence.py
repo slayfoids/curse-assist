@@ -60,6 +60,9 @@ _SCALAR_FIELDS = (
     "hotkey_show_panel",
     "hotkey_toggle_pull",
     "hotkey_trigger",
+    "activation_mode",
+    "hotkey_hold",
+    "audio_cues",
 )
 
 

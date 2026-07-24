@@ -227,7 +227,13 @@ class TargetTracker:
         # position with the most color instead of the blob center.
         if (mask is not None and snap_enabled and snap_radius > 0
                 and not use_regions):
-            self._update_on_color(mask, cx, cy, now)
+            # "On color" also counts having arrived at the pulled target: for
+            # concave shapes the aim point (centroid) can sit just off the
+            # ink, and strict mask-under-cursor would then never let the snap
+            # engage even though the cursor is resting on its target.
+            near = (math.hypot(target_det[0] - cx, target_det[1] - cy)
+                    <= max(12.0, 0.5 * snap_radius) * scale)
+            self._update_on_color(mask, cx, cy, now, near)
             if (self._on_color_since is not None
                     and (now - self._on_color_since) * 1000.0 >= snap_after_ms):
                 best = best_circle_center(mask, target_det[0], target_det[1],
@@ -336,11 +342,12 @@ class TargetTracker:
                 a * part[1] + (1.0 - a) * fcy)
 
     # ------------------------------------------------------------- snap timer
-    def _update_on_color(self, mask, cx, cy, now) -> None:
+    def _update_on_color(self, mask, cx, cy, now,
+                         near_target: bool = False) -> None:
         h, w = mask.shape[:2]
         ix, iy = int(round(cx)), int(round(cy))
-        on = False
-        if 0 <= ix < w and 0 <= iy < h:
+        on = near_target
+        if not on and 0 <= ix < w and 0 <= iy < h:
             x0, x1 = max(0, ix - 2), min(w, ix + 3)
             y0, y1 = max(0, iy - 2), min(h, iy + 3)
             on = bool(mask[y0:y1, x0:x1].any())

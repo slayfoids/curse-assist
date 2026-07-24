@@ -89,6 +89,11 @@ class AppState:
 
     # --- Master switches -------------------------------------------------
     pull_enabled: bool = False       # toggled by hotkey / button
+    # How the pull is activated: "toggle" (hotkey flips it on/off) or "hold"
+    # (active only while hotkey_hold is physically held down).
+    activation_mode: str = "toggle"
+    hotkey_hold: str = "MB4"         # key or mouse button held in "hold" mode
+    audio_cues: bool = True          # two high beeps = on, two low beeps = off
     auto_click_enabled: bool = True  # (legacy) dwell-click master enable
     # How clicks fire: "dwell" (auto after hovering), "trigger" (press the
     # trigger key to click instantly), or "off" (manual clicks only).
