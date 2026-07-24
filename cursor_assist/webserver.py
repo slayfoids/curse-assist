@@ -97,7 +97,7 @@ class WebApp:
         import sys
         self.start()
         if sys.stdout:  # None under pythonw (background/windowless mode)
-            print(f"Cursor Assist UI running at {self.url}")
+            print(f"Curse UI running at {self.url}")
             print("Press Ctrl+C here to quit (or use Quit in the page).")
         self._shutdown = threading.Event()
         try:
@@ -275,7 +275,9 @@ class WebApp:
                 "snap_after_ms": s.snap_after_ms,
                 "body_part_detection": s.body_part_detection,
                 "active_region": s.active_region,
+                "part_attraction": s.part_attraction,
                 "regions": REGIONS,
+                "configs": persistence.list_configs(),
                 "colors": [_hsv_to_hex(c) for c in s.colors],
                 "capture": {
                     "source": s.capture.source,
@@ -375,6 +377,18 @@ class WebApp:
             return {"hotkey": hk}
         elif action == "eyedrop":
             self._start_eyedrop()
+        elif action == "save_config":
+            code = persistence.save_config(self.state,
+                                           str(data.get("name", "")))
+            return {"ok": True, "code": code}
+        elif action == "load_config":
+            ok = persistence.load_config(self.state, str(data.get("code", "")))
+            if ok:
+                self._register_hotkeys()
+                self._save()
+            return {"ok": ok}
+        elif action == "delete_config":
+            return {"ok": persistence.delete_config(str(data.get("code", "")))}
         elif action == "reset_defaults":
             persistence.apply_dict(self.state, persistence.to_dict(AppState()))
             self._register_hotkeys()

@@ -17,7 +17,8 @@ from cursor_assist.segmentation import (
 def test_regions_tile_the_bbox_without_gaps_or_overlap_in_area():
     bbox = (0, 0, 100, 200)
     regions = segment_regions(bbox)
-    assert set(regions) == {"Head", "Torso", "L-Arm", "R-Arm", "L-Leg", "R-Leg"}
+    assert set(regions) == {"Head", "Torso", "L-Arm", "R-Arm",
+                            "L-Leg", "R-Leg", "Feet"}
 
     # Head spans full width at the top.
     hx, hy, hw, hh = regions["Head"]

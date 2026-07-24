@@ -14,7 +14,13 @@ Region layout within the figure bounding box (x right, y down):
     │Arm│       │Arm│
     ├───┴───┬───┴───┤
     │ L-Leg │ R-Leg │  bottom 45%, split on the vertical midline
-    └───────┴───────┘  bottom
+    ├───────┴───────┤
+    │     Feet      │  bottom 12% (overlaps the leg boxes)
+    └───────────────┘  bottom
+
+The proportions adapt mildly to the figure's aspect ratio: a squat/crouching
+figure (wide box) gets a taller head band and shorter legs than a standing one,
+which keeps the bands roughly on the right body parts as the pose changes.
 """
 
 from __future__ import annotations
@@ -30,8 +36,19 @@ def segment_regions(bbox: Rect) -> Dict[str, Rect]:
     """Return a rectangle per named region, in frame coordinates."""
     x, y, w, h = bbox
 
-    head_h = int(h * 0.15)
-    torso_h = int(h * 0.40)
+    # Aspect-adaptive proportions: a standing figure (tall box) has a small
+    # head band and long legs; a crouched/squat figure (near-square or wide
+    # box) has a proportionally bigger head and shorter legs.
+    aspect = h / float(w) if w else 2.0
+    if aspect >= 1.6:            # standing
+        head_f, torso_f = 0.15, 0.40
+    elif aspect >= 1.0:          # crouching / kneeling
+        head_f, torso_f = 0.20, 0.45
+    else:                        # prone / very wide: bands compress
+        head_f, torso_f = 0.25, 0.50
+
+    head_h = int(h * head_f)
+    torso_h = int(h * torso_f)
     # legs take the remainder so rounding never leaves a gap
     torso_y = y + head_h
     legs_y = y + head_h + torso_h
@@ -50,6 +67,9 @@ def segment_regions(bbox: Rect) -> Dict[str, Rect]:
         "R-Arm": (x + w - arm_w, torso_y, arm_w, torso_h),
         "L-Leg": (x, legs_y, mid_x - x, legs_h),
         "R-Leg": (mid_x, legs_y, (x + w) - mid_x, legs_h),
+        # Feet overlap the bottom of the leg boxes on purpose: aiming "Feet"
+        # means the very bottom strip of the figure regardless of leg split.
+        "Feet":  (x, y + h - max(1, int(h * 0.12)), w, max(1, int(h * 0.12))),
     }
 
 

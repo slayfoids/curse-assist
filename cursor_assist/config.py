@@ -13,7 +13,7 @@ from typing import List, Tuple
 
 
 # The named body regions exposed as selectable targets in the UI.
-REGIONS = ["Head", "Torso", "L-Arm", "R-Arm", "L-Leg", "R-Leg"]
+REGIONS = ["Head", "Torso", "L-Arm", "R-Arm", "L-Leg", "R-Leg", "Feet"]
 
 
 @dataclass
@@ -41,6 +41,29 @@ class ColorTarget:
             min(255, self.s + self.s_tol),
             min(255, self.v + self.v_tol),
         )
+
+    def hsv_ranges(self) -> list:
+        """(lower, upper) HSV range boxes, splitting when hue wraps at 0/179.
+
+        OpenCV hue is circular (red sits at both ends), so a red target near
+        H=0 must also match hues near 179 — clamping instead of wrapping
+        silently dropped half the reds.
+        """
+        s_lo, s_hi = max(0, self.s - self.s_tol), min(255, self.s + self.s_tol)
+        v_lo, v_hi = max(0, self.v - self.v_tol), min(255, self.v + self.v_tol)
+        h_lo, h_hi = self.h - self.h_tol, self.h + self.h_tol
+        if self.h_tol >= 90:  # tolerance covers the whole hue circle
+            return [((0, s_lo, v_lo), (179, s_hi, v_hi))]
+        ranges = []
+        if h_lo < 0:
+            ranges.append(((0, s_lo, v_lo), (h_hi, s_hi, v_hi)))
+            ranges.append(((180 + h_lo, s_lo, v_lo), (179, s_hi, v_hi)))
+        elif h_hi > 179:
+            ranges.append(((h_lo, s_lo, v_lo), (179, s_hi, v_hi)))
+            ranges.append(((0, s_lo, v_lo), (h_hi - 180, s_hi, v_hi)))
+        else:
+            ranges.append(((h_lo, s_lo, v_lo), (h_hi, s_hi, v_hi)))
+        return ranges
 
 
 @dataclass
@@ -115,6 +138,10 @@ class AppState:
     # regions and only target the active one (Head/Torso/Arms/Legs).
     body_part_detection: bool = False
     active_region: str = "Torso"
+    # How strongly the aim is drawn to the chosen part: 1.0 = aim exactly at
+    # the part, lower values blend toward the figure's center of mass, which
+    # is steadier when the part band jitters at the figure's edge.
+    part_attraction: float = 0.85
 
     # --- Capture ---------------------------------------------------------
     capture: CaptureConfig = field(default_factory=CaptureConfig)

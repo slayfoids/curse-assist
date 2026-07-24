@@ -27,8 +27,8 @@ WS_EX_TOOLWINDOW = 0x00000080
 WS_EX_NOACTIVATE = 0x08000000
 
 KEY_COLOR = "#010203"   # this exact color renders fully transparent + click-through
-SEARCH = "#5bc8ff"      # circle color while searching
-LOCKED = "#33ff88"      # circle color while a target is locked
+SEARCH = "#b273ff"      # circle color while searching (Curse violet)
+LOCKED = "#ff4df0"      # circle color while a target is locked (magenta)
 
 
 class CrosshairOverlay:

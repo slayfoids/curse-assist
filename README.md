@@ -1,4 +1,4 @@
-# Color-Based Cursor Assist
+# Curse — Color-Based Cursor Assist
 
 **An assistive-technology tool for people with limited hand movement, tremor, or
 reduced pointing accuracy.** It helps a user who cannot reliably control a mouse
@@ -113,7 +113,8 @@ required.)
 
 ## The control panel (web UI)
 
-A simple dark web panel that opens in the user's browser, organised into cards.
+**Curse** — a full-width purple/black glass dashboard that opens in the user's
+browser, organised into sectioned cards.
 Everything is adjustable and **persists between runs** (saved to
 `%LOCALAPPDATA%\CursorAssist\settings.json`). **Press Right Shift** any time to
 re-open the panel tab.
@@ -172,7 +173,9 @@ within which the tool offers guidance.
 | **Best-coverage snap** | After the pointer has rested on the color for the set time (default 1 s), aim is refined to the spot where the drawn circle (**Circle size**, falling back to the assist radius) covers the *most* target color. |
 | **Snap after (ms)** | How long the pointer must sit on the color before the best-coverage snap engages (200–3000 ms). |
 | **Body-part detection** | Off (default) = guide to the color directly. On = aid a body region of a drawn figure. |
-| **Target region** | When body-part detection is on, which region (Head/Torso/Arms/Legs) to aid. |
+| **Target region** | When body-part detection is on, which region (Head/Torso/Arms/Legs/Feet) to aid. Bands adapt to the figure's pose (standing / crouching / prone). |
+| **Part attraction** | How strongly the aim is drawn to the chosen part: 1.00 = exactly at the part, lower blends toward the figure's center of mass for steadiness. |
+| **Saved configs** | Snapshot the entire current setup under a unique random code (e.g. `CRS-7KQ2XN`). List, load, or delete saved configs; click a code to copy it, or type a code to load it on another setup. |
 | **Capture source** | Desktop screen (default) or an OBS virtual camera; monitor / region. |
 | **Detail (speed)** | Detection downscale — lower = faster, higher = more detail. |
 | **Detection area** | Restrict color detection to a pixel box (X/Y/W/H); 0 0 0 0 = whole frame. |

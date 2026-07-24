@@ -1,20 +1,32 @@
-"""Save and load user settings as JSON.
+"""Save and load user settings as JSON, plus named config snapshots.
 
 Everything the user tunes in the panel is persisted so their configuration
 survives a restart. The pull on/off state is intentionally *not* saved -- the
 app always starts with the assist disabled, which is the safe default.
+
+Config snapshots ("saved configs") capture the entire current setup under a
+unique random code like ``CRS-7KQ2XN``. They live as individual JSON files in
+a ``configs`` folder next to the settings file and can be loaded, listed, or
+deleted by code.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
+import secrets
+import time
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from .config import REGIONS, AppState, CaptureConfig, ColorTarget
 
 SETTINGS_VERSION = 1
+
+# Unambiguous alphabet (no 0/O/1/I/L) for the random config codes.
+_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+_CODE_RE = re.compile(r"^[A-Z]{3}-[A-Z0-9]{6}$")
 
 # Scalar fields copied verbatim to/from JSON.
 _SCALAR_FIELDS = (
@@ -38,6 +50,7 @@ _SCALAR_FIELDS = (
     "snap_after_ms",
     "body_part_detection",
     "active_region",
+    "part_attraction",
     "pull_radius",
     "show_overlay",
     "overlay_radius",
@@ -118,6 +131,99 @@ def save(state: AppState, path: Optional[Path] = None) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(to_dict(state), indent=2), encoding="utf-8")
     return path
+
+
+# ----------------------------------------------------------- config snapshots
+def configs_dir(base: Optional[Path] = None) -> Path:
+    return (base or default_settings_path().parent) / "configs"
+
+
+def _normalize_code(code: str) -> Optional[str]:
+    """Uppercase and validate a code; None if it isn't a legal code.
+
+    Codes come from user input, so this is also the path-traversal guard —
+    only exact ``XXX-XXXXXX`` codes ever touch the filesystem.
+    """
+    code = (code or "").strip().upper()
+    return code if _CODE_RE.match(code) else None
+
+
+def new_code(existing: Optional[set] = None) -> str:
+    """A fresh random config code, avoiding collisions with ``existing``."""
+    while True:
+        code = "CRS-" + "".join(secrets.choice(_CODE_ALPHABET)
+                                for _ in range(6))
+        if not existing or code not in existing:
+            return code
+
+
+def save_config(state: AppState, name: str = "",
+                base: Optional[Path] = None) -> str:
+    """Snapshot the current settings under a new random code; returns it."""
+    d = configs_dir(base)
+    d.mkdir(parents=True, exist_ok=True)
+    code = new_code({p.stem for p in d.glob("*.json")})
+    data = to_dict(state)
+    data["config_name"] = str(name)[:60]
+    data["config_created"] = time.time()
+    (d / f"{code}.json").write_text(json.dumps(data, indent=2),
+                                    encoding="utf-8")
+    return code
+
+
+def list_configs(base: Optional[Path] = None) -> List[dict]:
+    """All saved configs as ``{code, name, created}``, newest first."""
+    d = configs_dir(base)
+    out: List[dict] = []
+    if not d.exists():
+        return out
+    for p in d.glob("*.json"):
+        if _normalize_code(p.stem) != p.stem:
+            continue
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            continue
+        out.append({
+            "code": p.stem,
+            "name": data.get("config_name", ""),
+            "created": data.get("config_created", p.stat().st_mtime),
+        })
+    out.sort(key=lambda c: c["created"], reverse=True)
+    return out
+
+
+def load_config(state: AppState, code: str,
+                base: Optional[Path] = None) -> bool:
+    """Apply the snapshot saved under ``code``. Returns True on success."""
+    norm = _normalize_code(code)
+    if norm is None:
+        return False
+    p = configs_dir(base) / f"{norm}.json"
+    if not p.exists():
+        return False
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    apply_dict(state, data)
+    return True
+
+
+def delete_config(code: str, base: Optional[Path] = None) -> bool:
+    norm = _normalize_code(code)
+    if norm is None:
+        return False
+    p = configs_dir(base) / f"{norm}.json"
+    if not p.exists():
+        return False
+    try:
+        p.unlink()
+        return True
+    except OSError:
+        return False
 
 
 def load(state: AppState, path: Optional[Path] = None) -> bool:

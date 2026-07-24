@@ -171,6 +171,7 @@ class TargetTracker:
         snap_enabled: bool = False,
         snap_radius: int = 0,
         snap_after_ms: int = 1000,
+        part_attraction: float = 1.0,
     ) -> Optional[Tuple[int, int]]:
         """Return a smoothed screen-space target, or ``None`` if none found.
 
@@ -216,7 +217,7 @@ class TargetTracker:
                 return None
         else:
             target_det = self._pick_region(
-                shapes, figure, active_region, cx, cy, r_det)
+                shapes, figure, active_region, cx, cy, r_det, part_attraction)
             if target_det is None:
                 self.reset()
                 return None
@@ -245,8 +246,8 @@ class TargetTracker:
         """Blob-center picking with a sticky lock. Returns (target, switched)."""
         cands = []
         for s in shapes:
-            bx, by, bw, bh = s.bbox
-            cands.append((bx + bw / 2.0, by + bh / 2.0, math.hypot(bw, bh)))
+            bw, bh = s.bbox[2], s.bbox[3]
+            cands.append((s.center[0], s.center[1], math.hypot(bw, bh), s.area))
 
         # 1) Try to re-identify the locked target among this frame's blobs.
         if lock_enabled and self._lock is not None:
@@ -254,7 +255,7 @@ class TargetTracker:
             ly = (self._lock[1] - oy) * scale
             best = None
             best_d = None
-            for (px, py, diag) in cands:
+            for (px, py, diag, _area) in cands:
                 d = math.hypot(px - lx, py - ly)
                 if best_d is None or d < best_d:
                     best_d, best = d, (px, py, diag)
@@ -275,15 +276,18 @@ class TargetTracker:
                 return held, False
             self._lock = None
 
-        # 2) No lock: acquire the blob nearest the cursor (inside the FOV).
+        # 2) No lock: acquire inside the FOV, scored by distance discounted by
+        # blob size — between a speck and a real target at similar distance,
+        # the real target wins, but a much closer blob still wins outright.
         best = None
-        best_d = None
-        for (px, py, diag) in cands:
+        best_s = None
+        for (px, py, diag, area) in cands:
             d = math.hypot(px - cx, py - cy)
             if r_det is not None and d > r_det:
                 continue
-            if best_d is None or d < best_d:
-                best_d, best = d, (px, py)
+            score = d / (max(area, 1.0) ** 0.15)
+            if best_s is None or score < best_s:
+                best_s, best = score, (px, py)
         if best is None:
             return None, False
         if lock_enabled:
@@ -297,13 +301,13 @@ class TargetTracker:
             return None
         return ((self._lock[0] - ox) * scale, (self._lock[1] - oy) * scale)
 
-    def _pick_region(self, shapes, figure, active_region, cx, cy, r_det):
+    def _pick_region(self, shapes, figure, active_region, cx, cy, r_det,
+                     attraction=1.0):
         if figure is None:
             return None
+        fcx, fcy = figure.center
         # Respect the FOV: ignore a figure whose center is out of range.
         if r_det is not None:
-            fx, fy, fw, fh = figure.bbox
-            fcx, fcy = fx + fw / 2.0, fy + fh / 2.0
             if (fcx - cx) ** 2 + (fcy - cy) ** 2 > r_det * r_det:
                 return None
         region_rect = segment_regions(figure.bbox).get(active_region)
@@ -315,15 +319,21 @@ class TargetTracker:
             if len(pts):
                 candidates.append(pts)
         if candidates:
-            # Outline strokes cross the region: aim at the nearest one.
+            # Outline strokes cross the region: aim at the centroid of the
+            # strokes inside the band (steadier than the single nearest point,
+            # which used to hop along the outline as the cursor moved).
             pts = np.vstack(candidates).astype(np.float64)
-            d2 = (pts[:, 0] - cx) ** 2 + (pts[:, 1] - cy) ** 2
-            nearest = pts[int(np.argmin(d2))]
-            return (nearest[0], nearest[1])
-        # Filled figure (no edge points inside the region): aim at the
-        # center of the region box so the pull still heads to that area.
-        rx, ry, rw, rh = region_rect
-        return (rx + rw / 2.0, ry + rh / 2.0)
+            part = (float(pts[:, 0].mean()), float(pts[:, 1].mean()))
+        else:
+            # Filled figure (no edge points inside the region): aim at the
+            # center of the region box so the pull still heads to that area.
+            rx, ry, rw, rh = region_rect
+            part = (rx + rw / 2.0, ry + rh / 2.0)
+        # Attraction: 1 = aim exactly at the part; lower blends toward the
+        # figure's center of mass for extra steadiness.
+        a = max(0.0, min(1.0, attraction))
+        return (a * part[0] + (1.0 - a) * fcx,
+                a * part[1] + (1.0 - a) * fcy)
 
     # ------------------------------------------------------------- snap timer
     def _update_on_color(self, mask, cx, cy, now) -> None:

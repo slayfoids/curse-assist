@@ -16,7 +16,8 @@ def blob(x, y, w=20, h=20):
         [[[x, y]], [[x + w, y]], [[x + w, y + h]], [[x, y + h]]],
         dtype=np.int32)
     return DetectedShape(contour=contour, bbox=(x, y, w, h),
-                         area=float(w * h), kind="square")
+                         area=float(w * h), kind="square",
+                         center=(x + w / 2.0, y + h / 2.0))
 
 
 def pick(tracker, shapes, cursor, **kw):

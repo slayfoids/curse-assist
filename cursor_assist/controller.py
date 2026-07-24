@@ -194,6 +194,7 @@ class AssistController:
                     snap_enabled=snap.snap_to_best,
                     snap_radius=snap_r,
                     snap_after_ms=snap.snap_after_ms,
+                    part_attraction=snap.part_attraction,
                 )
                 self._publish(target)
                 self._target_speed = self._tracker.speed()

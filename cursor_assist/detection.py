@@ -22,6 +22,7 @@ class DetectedShape:
     bbox: tuple                    # (x, y, w, h)
     area: float
     kind: str                      # rough classification: triangle/rect/poly/circle
+    center: tuple = (0.0, 0.0)     # centroid (moments), truer than bbox center
 
 
 def build_mask(
@@ -32,10 +33,11 @@ def build_mask(
     """Combine every color target into a single binary mask."""
     mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
     for c in colors:
-        lower = np.array(c.lower(), dtype=np.uint8)
-        upper = np.array(c.upper(), dtype=np.uint8)
-        band = cv2.inRange(hsv, lower, upper)
-        mask = cv2.bitwise_or(mask, band)
+        # A color may span the hue wrap point (red): OR every sub-range.
+        for lo, hi in c.hsv_ranges():
+            band = cv2.inRange(hsv, np.array(lo, dtype=np.uint8),
+                               np.array(hi, dtype=np.uint8))
+            mask = cv2.bitwise_or(mask, band)
 
     if thin_border:
         # Thin outlines survive better and connect small gaps if we dilate
@@ -88,12 +90,22 @@ def find_shapes(
         area = cv2.contourArea(c)
         if area < min_area:
             continue
+        bbox = cv2.boundingRect(c)
+        # Moments centroid: the shape's true center of mass. For irregular
+        # shapes this is a much better aim point than the bbox center (an
+        # L-shape's bbox center can even sit outside the shape).
+        m = cv2.moments(c)
+        if m["m00"] > 1e-6:
+            center = (m["m10"] / m["m00"], m["m01"] / m["m00"])
+        else:  # degenerate (thin line): fall back to the bbox center
+            center = (bbox[0] + bbox[2] / 2.0, bbox[1] + bbox[3] / 2.0)
         shapes.append(
             DetectedShape(
                 contour=c,
-                bbox=cv2.boundingRect(c),
+                bbox=bbox,
                 area=area,
                 kind=_classify(c),
+                center=center,
             )
         )
     return shapes, mask
