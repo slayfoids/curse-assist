@@ -220,6 +220,8 @@ class WebApp:
                 "sensitivity": s.sensitivity,
                 "min_contour_area": s.min_contour_area,
                 "detect_scale": s.detect_scale,
+                "roi_x": s.roi_x, "roi_y": s.roi_y,
+                "roi_w": s.roi_w, "roi_h": s.roi_h,
                 "detect_thin_border": s.detect_thin_border,
                 "suppress_mouse": s.suppress_mouse,
                 "active_region": s.active_region,
@@ -297,6 +299,14 @@ class WebApp:
                     if k in data:
                         try:
                             setattr(cap, k, int(data[k]))
+                        except (TypeError, ValueError):
+                            pass
+        elif action == "apply_roi":
+            with self.state.lock:
+                for k in ("roi_x", "roi_y", "roi_w", "roi_h"):
+                    if k in data:
+                        try:
+                            setattr(self.state, k, max(0, int(data[k])))
                         except (TypeError, ValueError):
                             pass
         elif action == "apply_hotkeys":

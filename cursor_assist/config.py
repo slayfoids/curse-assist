@@ -86,6 +86,13 @@ class AppState:
     sensitivity: int = 12            # global color tolerance applied to all colors
     detect_scale: float = 0.5        # downscale factor for detection speed (0.25-1)
 
+    # Detection area: crop the captured frame to this pixel box before detecting
+    # (works for any source, incl. OBS). All zeros / w==0 / h==0 = whole frame.
+    roi_x: int = 0
+    roi_y: int = 0
+    roi_w: int = 0
+    roi_h: int = 0
+
     # --- Region selection ------------------------------------------------
     active_region: str = "Torso"
 

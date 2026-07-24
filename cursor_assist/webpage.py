@@ -216,6 +216,16 @@ PAGE = r"""<!doctype html>
       <span class="val"></span></div>
   </div>
 
+  <div class="card" style="animation-delay:.28s"><h2>Detection area (pixels)</h2>
+    <div class="hint">Only look for colors inside this box. X / Y / W / H &nbsp;(0 0 0 0 = whole frame)</div>
+    <div class="fields">
+      <input class="txt" id="roi_x" placeholder="X"><input class="txt" id="roi_y" placeholder="Y">
+      <input class="txt" id="roi_w" placeholder="W"><input class="txt" id="roi_h" placeholder="H">
+      <button class="btn accent" onclick="applyRoi()">Apply</button>
+      <button class="btn" onclick="clearRoi()">Full</button>
+    </div>
+  </div>
+
   <div class="card" style="animation-delay:.3s"><h2>Input control</h2>
     <div class="toggle"><span>Block my mouse while the bot is moving</span>
       <label class="switch"><input type="checkbox" data-key="suppress_mouse">
@@ -276,6 +286,10 @@ function applyCapture(){act('apply_capture',{
   monitor:+$('#cap_monitor').value||0, obs_device_index:+$('#cap_obs').value||0,
   left:+$('#cap_left').value||0, top:+$('#cap_top').value||0,
   width:+$('#cap_width').value||0, height:+$('#cap_height').value||0}).then(()=>flash('capture applied'));}
+function applyRoi(){act('apply_roi',{
+  roi_x:+$('#roi_x').value||0, roi_y:+$('#roi_y').value||0,
+  roi_w:+$('#roi_w').value||0, roi_h:+$('#roi_h').value||0}).then(()=>flash('detection area applied'));}
+function clearRoi(){['roi_x','roi_y','roi_w','roi_h'].forEach(id=>$('#'+id).value=0);applyRoi();}
 function applyHotkeys(){act('apply_hotkeys',{show:$('#hk_show').value.trim(),pull:$('#hk_pull').value.trim()})
   .then(()=>flash('hotkeys applied'));}
 async function record(which){flash('press a key or combo…');
@@ -318,6 +332,7 @@ function fillStatic(){
   const set=(id,v)=>{const e=$(id);if(e&&focused!==e)e.value=v;};
   set('#cap_monitor',c.monitor);set('#cap_obs',c.obs_device_index);
   set('#cap_left',c.left);set('#cap_top',c.top);set('#cap_width',c.width);set('#cap_height',c.height);
+  set('#roi_x',S.roi_x);set('#roi_y',S.roi_y);set('#roi_w',S.roi_w);set('#roi_h',S.roi_h);
   set('#hk_show',S.hotkey_show_panel);set('#hk_pull',S.hotkey_toggle_pull);
 }
 async function load(){S=await fetch('/api/state').then(r=>r.json());fillStatic();render();}

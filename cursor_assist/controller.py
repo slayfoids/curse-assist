@@ -139,6 +139,18 @@ class AssistController:
                     time.sleep(0.01)
                     continue
 
+                # Optional detection area (ROI): crop the frame and shift the
+                # origin so screen mapping stays correct.
+                origin = capture.origin
+                if snap.roi_w > 0 and snap.roi_h > 0:
+                    fh, fw = frame.shape[:2]
+                    x0 = max(0, min(snap.roi_x, fw - 1))
+                    y0 = max(0, min(snap.roi_y, fh - 1))
+                    x1 = max(x0 + 1, min(snap.roi_x + snap.roi_w, fw))
+                    y1 = max(y0 + 1, min(snap.roi_y + snap.roi_h, fh))
+                    frame = frame[y0:y1, x0:x1]
+                    origin = (origin[0] + x0, origin[1] + y0)
+
                 scale = max(0.2, min(1.0, snap.detect_scale))
                 small = (cv2.resize(frame, None, fx=scale, fy=scale,
                                     interpolation=cv2.INTER_AREA)
@@ -154,7 +166,7 @@ class AssistController:
                     shapes=shapes, figure=figure,
                     active_region=snap.active_region,
                     cursor_screen=cur.get_cursor_pos(),
-                    capture_origin=capture.origin,
+                    capture_origin=origin,
                     scale=scale,
                 )
                 self._publish(target)

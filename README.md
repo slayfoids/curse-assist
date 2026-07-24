@@ -104,7 +104,8 @@ Cards: **Motion** (smoothness, max speed, target steadiness) · **Click** (auto
 dwell-click, dwell time, radius) · **Target colors** (multiple colors, picker,
 eyedropper, sensitivity, min area, thin-outline) · **Target region** (six
 buttons) · **Capture source** (OBS/Screen, monitor, region, OBS index, detail) ·
-**Input control** (block my mouse) · **Hotkeys** (both rebindable, with Record).
+**Detection area** (pixel ROI to search within) · **Input control** (block my
+mouse) · **Hotkeys** (both rebindable, with Record).
 
 ## How to use it
 
@@ -137,6 +138,7 @@ Turn **Auto dwell-click** off to keep the pull assist but click manually.
 | **Target region** | Restricts the pull to one body region of the figure. |
 | **Capture source** | OBS virtual cam (recommended) or desktop; monitor / region / OBS index. |
 | **Detail (speed)** | Detection downscale — lower = faster, higher = more detail. |
+| **Detection area** | Restrict color detection to a pixel box (X/Y/W/H); 0 0 0 0 = whole frame. Works for OBS too. |
 | **Block my mouse** | While the bot is moving, suppress your *physical* mouse so a shaky hand doesn't fight it (uses a Windows low-level mouse hook; clicks still pass). |
 | **Hotkeys** | Rebind either hotkey — type it or click **Record** and press the keys. |
 | **Reset / Quit** | Restore defaults · stop the app. Changes autosave. |
