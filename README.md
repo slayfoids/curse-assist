@@ -1,20 +1,37 @@
 # Color-Based Cursor Assist
 
-An accessibility tool for people with limited hand movement and reduced pointing
-accuracy. It captures the screen, detects colored shapes/outlines with OpenCV,
-and **gently pulls the mouse cursor toward a selected target** so the user can
-more easily interact with on-screen art — for example, tracing or clicking parts
-of a hand-drawn human figure — without needing precise manual control.
+**An assistive-technology tool for people with limited hand movement, tremor, or
+reduced pointing accuracy.** It helps a user who cannot reliably control a mouse
+place and activate the pointer on things they want to interact with on their own
+screen.
 
-The pull is a smooth, frame-rate-independent easing motion (never a snap), and
-clicks fire by **dwelling** over a target rather than requiring a physical button
-press. The control panel is a **sleek local web app** that opens in your browser.
+It captures the screen, detects a color the user chooses, and **gently guides the
+mouse cursor toward that color**, so someone with low dexterity only has to move
+roughly in the right direction — the software eases the pointer the rest of the
+way. It was built for a specific person to help them interact with on-screen art
+(for example, tracing or selecting parts of a hand-drawn figure) without needing
+precise manual control.
+
+The guidance is a smooth, gradual easing motion (never a jump), and — because
+pressing a physical mouse button can itself be difficult — a click can be issued
+automatically by resting the pointer on the target (**dwell**), by a chosen key,
+or repeatedly for users who cannot click many times themselves. The control panel
+is a local web page that opens in the user's browser.
+
+### Purpose and scope
+
+This is a **desktop accessibility aid** for the operator's *own* computer,
+comparable in spirit to dwell-clicking, sticky keys, or head/eye pointer software
+built into operating systems. It does not read or modify any other program; it
+only looks at on-screen pixels and moves the pointer through the standard Windows
+input path, exactly as an assistive mouse or trackball would.
 
 > Windows only. Cursor movement and clicks go through the standard `SendInput`
 > API — the same path a real mouse uses. The one optional exception is the
-> "block my mouse" feature, which uses a standard Windows low-level mouse hook
-> (see [Input control](#controls)); it is off by default. Screen-pixel input
-> only — nothing reads another process's memory.
+> "steady the pointer" feature, which uses a standard Windows low-level mouse
+> hook (see [Input control](#controls)) to reduce the effect of hand tremor; it
+> is off by default. Screen-pixel input only — nothing reads another process's
+> memory.
 
 ---
 
@@ -88,77 +105,81 @@ py -m cursor_assist --monitor 2
 py -m cursor_assist --source obs --obs-index 0
 ```
 
-The OBS virtual camera is the **default and recommended** source — start
-**Start Virtual Camera** in OBS before launching.
+Ordinary **desktop screen capture is the default** source. (An OBS Virtual
+Camera source is also available for users who already run OBS, but it is not
+required.)
 
 ---
 
 ## The control panel (web UI)
 
-A sleek, all-black web panel that opens in your browser, organised into cards.
-Everything is exposed and **persists between runs** (saved to
+A simple dark web panel that opens in the user's browser, organised into cards.
+Everything is adjustable and **persists between runs** (saved to
 `%LOCALAPPDATA%\CursorAssist\settings.json`). **Press Right Shift** any time to
-re-open/focus the panel tab.
+re-open the panel tab.
 
-Cards: **Motion** (smoothness, max speed, target steadiness) · **Click** (mode:
-dwell/trigger/off, dwell time, radius, trigger key) · **Field of view** (pull
-radius + crosshair circle) · **Target colors** (multiple colors, picker,
-eyedropper, sensitivity, min area, thin-outline) · **Target region** (six
-buttons) · **Capture source** (Screen/OBS, monitor, region, index, detail) ·
-**Detection area** (pixel ROI to search within) · **Input control** (block my
-mouse) · **Hotkeys** (all rebindable, with Record).
+Cards: **Motion** (smoothness, max speed, target steadiness) · **Click** (how the
+click is issued: dwell / key / off, dwell time, radius, repeated clicks) ·
+**Assist area** (how large an area around the pointer the tool responds to, shown
+as a circle) · **Target colors** (one or more colors, picker, eyedropper,
+sensitivity, min area, thin-outline) · **Target region** (six buttons) ·
+**Capture source** (Screen/OBS, monitor, region, detail) · **Detection area**
+(limit the search to a pixel box) · **Input control** (steady the pointer against
+tremor) · **Hotkeys** (all rebindable, with Record).
 
 ## How to use it
 
-1. Launch the app — the panel opens in your browser. Start OBS's virtual camera.
+1. Launch the app — the panel opens in the browser.
 2. Add one or more **Target colors**: **＋ Pick** a color, or use the
    **⦿ Eyedropper** and click the exact pixel on screen you want to match. Add as
-   many colors as you like. Tune **Sensitivity** until the status dot turns green
-   — detection runs live even before you turn the pull on, so you can tune first.
-3. By default it **just tracks the color** (pulls toward the colored blob nearest
-   the cursor). Turn on **Body-part detection** only if you want to target a
-   specific region (Head / Torso / Arms / Legs) of a figure.
-4. Toggle **PULL** on (button or your **Toggle pull** hotkey, default **F8**).
-5. Move roughly toward the target; the cursor glides the rest of the way. Hold
-   near it and, after the **Dwell time**, a click fires automatically.
+   many as you like. Adjust **Sensitivity** until the status dot turns green —
+   detection runs live even before guidance is turned on, so it can be set up
+   first.
+3. By default the tool **guides toward the color directly** (the nearest matching
+   color to the pointer). Turn on **Body-part detection** only if you want to aid
+   a specific region (Head / Torso / Arms / Legs) of a drawn figure.
+4. Turn guidance **ON** (the button, or the *Toggle guidance* hotkey, default
+   **F8**).
+5. Move roughly toward the target; the pointer eases the rest of the way. Rest on
+   it and, after the **Dwell time**, a click is issued automatically.
 
-Set **Click mode** to *Trigger key* for an instant click on a key press, or *Off*
-to click manually. The on-screen **FOV circle** shows the radius around the
-cursor within which the assist engages.
+Set **Click mode** to *Key* to issue a click with a chosen key instead, or *Off*
+to click manually. The on-screen **circle** shows the area around the pointer
+within which the tool offers guidance.
 
 ### Controls
 
 | Control | What it does |
 |---|---|
-| **PULL ON/OFF** | Master toggle for the pull assist (also the *Toggle pull* hotkey). |
-| **Smoothness** | 0 = snappy, 1 = long buttery glide. Motion is frame-rate independent. |
-| **Max speed** | Cap on cursor speed (px/sec, up to 30000). Higher = catches fast-moving colors and keeps them centered. |
-| **Target steadiness** | Jitter smoothing on the target point (EMA). |
-| **Click mode** | **Dwell** (auto-click after holding on target), **Trigger key** (press a key to click instantly), or **Off** (manual). |
-| **Dwell time** | In dwell mode, how long to hold before a click fires (50–1500 ms). |
-| **Trigger key** | In trigger mode, the (recordable) key that fires an instant click. |
-| **Click radius** | How close counts as "on target" for dwell. |
-| **Repeat clicks** | Keep auto-clicking while on target (auto-clicker), at the chosen interval. |
+| **Guidance ON/OFF** | Master toggle for cursor guidance (also the *Toggle guidance* hotkey). |
+| **Smoothness** | 0 = responsive, 1 = long gentle glide. Motion is frame-rate independent. |
+| **Max speed** | Cap on how fast the pointer moves (px/sec, up to 30000). Higher = keeps up with a color that moves quickly. |
+| **Target steadiness** | Smooths out detection jitter so the pointer doesn't wobble. |
+| **Click mode** | **Dwell** (click after resting on the target), **Key** (a chosen key issues the click), or **Off** (click manually). |
+| **Dwell time** | In dwell mode, how long to rest before a click is issued (50–1500 ms). |
+| **Click key** | In key mode, the (recordable) key that issues a click. |
+| **Click radius** | How close to the target counts as "on it" for dwell. |
+| **Higher click magnitude** | Issue clicks repeatedly while resting on the target — for users who can't click many times themselves. |
 | **Click interval** | Time between repeated clicks (30–1000 ms). |
-| **Pull radius** | FOV: only assist toward colors within this circle of the cursor (0 = whole screen). |
-| **Show crosshair circle** | Draw the FOV circle over the cursor (green when locked on). |
-| **Target colors** | Add multiple colors via picker or on-screen **eyedropper**; click a swatch to remove. |
-| **Sensitivity** | Global HSV tolerance applied to all colors (higher = matches more). |
+| **Assist radius** | Only guide toward colors within this distance of the pointer (0 = whole screen). |
+| **Show circle** | Draw the assist-area circle around the pointer (green when a color is engaged). |
+| **Target colors** | Add one or more colors via picker or on-screen **eyedropper**; click a swatch to remove. |
+| **Sensitivity** | How closely a pixel must match the chosen color (higher = matches a wider range). |
 | **Min area** | Ignores colored specks smaller than this (px²). |
 | **Detect thin outlines** | Detect colored *outlines*, not just filled color. |
-| **Body-part detection** | Off (default) = track the color directly. On = target a body region of a figure. |
-| **Target region** | When body-part detection is on, which region (Head/Torso/Arms/Legs) to aim at. |
-| **Capture source** | OBS virtual cam (recommended) or desktop; monitor / region / OBS index. |
+| **Body-part detection** | Off (default) = guide to the color directly. On = aid a body region of a drawn figure. |
+| **Target region** | When body-part detection is on, which region (Head/Torso/Arms/Legs) to aid. |
+| **Capture source** | Desktop screen (default) or an OBS virtual camera; monitor / region. |
 | **Detail (speed)** | Detection downscale — lower = faster, higher = more detail. |
-| **Detection area** | Restrict color detection to a pixel box (X/Y/W/H); 0 0 0 0 = whole frame. Works for OBS too. |
-| **Block my mouse** | While the bot is moving, suppress your *physical* mouse so a shaky hand doesn't fight it (uses a Windows low-level mouse hook; clicks still pass). |
-| **Hotkeys** | Rebind either hotkey — type it or click **Record** and press the keys. |
+| **Detection area** | Restrict color detection to a pixel box (X/Y/W/H); 0 0 0 0 = whole frame. |
+| **Steady the pointer** | While the tool is moving the pointer, reduce the effect of the user's own hand tremor so it doesn't fight the guidance (uses a Windows low-level mouse hook; clicks still pass). |
+| **Hotkeys** | Rebind any hotkey — type it or click **Record** and press the keys. |
 | **Reset / Quit** | Restore defaults · stop the app. Changes autosave. |
 
 > **Hotkeys are fully rebindable.** Defaults are **Right Shift** (show panel) and
-> **F8** (toggle pull). Click **Record** and press any key or combo to rebind.
-> Note Right Shift also still works as a normal Shift while typing — rebind it if
-> that bothers you.
+> **F8** (toggle guidance). Click **Record** and press any key or combo to
+> rebind. Note Right Shift also still works as a normal Shift while typing —
+> rebind it if that bothers you.
 
 ---
 
@@ -166,23 +187,23 @@ cursor within which the assist engages.
 
 ```
  DETECTION thread (runs as fast as the source allows)
-   OBS vcam / mss ─▶ (crop ROI) ─▶ downscale ─▶ HSV mask (all colors) ─▶ contours
-       ─▶ color mode: aim at nearest color blob's center   (default)
-       ─▶ body-part mode: split figure into regions, aim in the active one
+   screen / OBS vcam ─▶ (crop ROI) ─▶ downscale ─▶ HSV mask (all colors) ─▶ contours
+       ─▶ color mode: target the nearest matching color's center   (default)
+       ─▶ body-part mode: split figure into regions, target the active one
        ─▶ EMA smoothing ─▶ publishes the current target ─┐
                                                           │  (shared target)
- MOVEMENT thread (~180 Hz, independent)                   ▼
+ MOVEMENT thread (~240 Hz, independent)                   ▼
    read latest target ─▶ time-based ease: new = cur + (target-cur)·α(dt)
        ─▶ SendInput relative move (speed-capped) ─▶ dwell timer ─▶ click
-       ─▶ (optional) suppress physical mouse while pulling
+       ─▶ (optional) steady the pointer against hand tremor
 ```
 
-**Why it's smooth:** motion and detection are **decoupled**. The cursor is eased
-by a dedicated ~180 Hz loop using *time-based* smoothing (`α = 1 − e^(−dt/τ)`),
-so it glides analog-smoothly regardless of how fast detection runs. Detection
-runs on a downscaled frame for speed and only *publishes* a target; a slow
-detection frame no longer makes the cursor stutter. Smoothing on the **target**
-(not the cursor) kills detection jitter; the speed cap prevents snapping.
+**Why it's smooth:** motion and detection are **decoupled**. The pointer is eased
+by a dedicated high-rate loop using *time-based* smoothing (`α = 1 − e^(−dt/τ)`),
+so it glides smoothly regardless of how fast detection runs. Detection runs on a
+downscaled frame for speed and only *publishes* a target; a slow detection frame
+no longer makes the pointer stutter. Smoothing the **target** (not the pointer)
+removes detection jitter; the speed cap prevents any sudden jump.
 
 ### Modules
 
@@ -194,8 +215,8 @@ detection frame no longer makes the cursor stutter. Smoothing on the **target**
 | `segmentation.py` | Split a figure's bounding box into named body regions. |
 | `targeting.py` | Nearest in-region contour point + EMA (downscale-aware). |
 | `cursor.py` | `SendInput` relative move + click; time-based ease; dwell machine. |
-| `mouse_block.py` | Optional low-level hook to suppress physical mouse while pulling. |
-| `overlay.py` | Transparent click-through crosshair / FOV-circle overlay. |
+| `mouse_block.py` | Optional low-level hook to steady the pointer against tremor. |
+| `overlay.py` | Transparent click-through assist-area circle overlay. |
 | `controller.py` | Decoupled detection + ~180 Hz movement threads. |
 | `webserver.py` | Local HTTP server + JSON API for the web UI. |
 | `webpage.py` | The self-contained dark web control panel (HTML/CSS/JS). |
@@ -229,23 +250,24 @@ have unit tests that run without a display or camera:
 py -m pytest -q
 ```
 
-### Aim simulation
+### Pointing-accuracy simulation
 
 `tools/aim_sim.py` drives the **real** engine (detection + movement threads,
 targeting, easing, dwell) against a synthetic colored target using a *virtual*
-cursor — no display, OBS, or real mouse. It measures how close the cursor gets to
-the color (static) and how well it follows a moving target (tracking):
+pointer — no display, camera, or real mouse. It measures how close the pointer
+gets to the color (stationary) and how well it follows a color that moves:
 
 ```bash
 py tools/aim_sim.py
 ```
 
-Current results — static final error **~1 px** (settles ~0.4 s), moving-target
+Current results — stationary final error **~1 px** (settles ~0.4 s), moving-color
 error **~2 px** on default settings. This harness is how the "doesn't fully reach
-the color" bug (an easing step that rounded sub-pixel moves to zero and stalled
+the color" bug (an easing step that rounded sub-pixel moves to zero and stopped
 ~13 px short) was found and fixed. Accuracy comes from a sub-pixel accumulator
-with pixel-exact lock-on, plus a velocity **lead** that aims ahead of a moving
-target (and is disabled when the target is static, so it never costs precision).
+that lands exactly on the target, plus a small motion prediction that anticipates
+a moving color (disabled when the color is stationary, so it never costs
+precision).
 
 ## License
 

@@ -1,8 +1,10 @@
 # Full Install Guide (Windows, step by step)
 
-This guide takes you from a fresh Windows PC to running **Cursor Assist**,
-including the **background (no-console) mode**. No prior Python experience needed
-— just follow each step in order.
+This guide takes you from a fresh Windows PC to running **Cursor Assist** — an
+assistive-technology tool that helps a person with limited hand movement or
+tremor place and click the mouse pointer on their own screen. It includes the
+**background (no-console) mode**. No prior Python experience needed — just follow
+each step in order.
 
 ---
 
@@ -100,12 +102,15 @@ Quick check:
    many colors as you like.
 2. Adjust **Sensitivity** until the status dot (top-right) turns **green** when
    your target is on screen.
-3. Pick a **Target region** (Head / Torso / etc.).
-4. Click **PULL: OFF** to turn it **ON** (or press **F8**).
-5. Move the mouse roughly toward the target — the cursor should glide the rest of
-   the way, and clicking happens automatically after the **Dwell time**.
-6. If your hand fights the pull, enable **Block my mouse while the bot is moving**
-   under *Input control*.
+3. Leave **Body-part detection** off to guide straight to the color (turn it on
+   only if you want to aid a specific region — Head / Torso / etc. — of a drawn
+   figure).
+4. Turn the guidance **on** with the large button at the top of the panel (or
+   press **F8**).
+5. Move the mouse roughly toward the target — the pointer eases the rest of the
+   way, and a click is issued automatically after the **Dwell time**.
+6. If the user's hand tremor works against the guidance, turn on the
+   pointer-steadying option in the **Input control** card.
 
 Click **Quit** in the page (or close the console) to stop it. Once you're happy,
 move on to background mode.
