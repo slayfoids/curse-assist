@@ -22,6 +22,7 @@ from typing import Optional
 from . import persistence
 from .config import REGIONS, AppState, ColorTarget
 from .controller import AssistController
+from .holdwatch import HoldWatcher
 from .webpage import PAGE
 
 VK_LBUTTON = 0x01
@@ -86,7 +87,8 @@ class WebApp:
         self._eyedrop_thread: Optional[threading.Thread] = None
         self._hotkey_handles: list = []
         self._mouse_hooks: list = []
-        self._key_hooks: list = []   # keyboard.hook_key handles (hold mode)
+        self._key_hooks: list = []   # keyboard.hook_key handles
+        self._hold = HoldWatcher(self._set_pull)
         self._httpd: Optional[ThreadingHTTPServer] = None
         self.quit_event = threading.Event()  # set when the app is shutting down
         self._stopped = False
@@ -194,6 +196,35 @@ class WebApp:
                 h=h, s=s, v=v, h_tol=tol,
                 s_tol=min(255, tol * 8), v_tol=min(255, tol * 8)))
 
+    # ------------------------------------------------------------ screenshot
+    def screenshot_png(self) -> Optional[bytes]:
+        """One frame of the current capture source, encoded as PNG.
+
+        Backs the panel's "Screenshot" picker: freezing a frame and clicking
+        the exact pixel is far easier than chasing a live eyedropper, which
+        needs the colour to still be on screen *and* the hand steady enough
+        to click it — the precise thing this tool exists to help with.
+        """
+        import cv2
+        from .capture import make_capture
+        cap = None
+        try:
+            cap = make_capture(self.state.snapshot().capture)
+            frame = cap.grab()
+            if frame is None:
+                return None
+            ok, buf = cv2.imencode(".png", frame)
+            return buf.tobytes() if ok else None
+        except Exception as exc:
+            self._on_error(exc)
+            return None
+        finally:
+            if cap is not None:
+                try:
+                    cap.close()
+                except Exception:
+                    pass
+
     # ------------------------------------------------------------ eyedropper
     def _start_eyedrop(self) -> None:
         if self._eyedropping:
@@ -259,18 +290,15 @@ class WebApp:
             "the toggle hotkey")
 
         # Hold-to-activate: the pull is live only while the chosen key or
-        # mouse button is physically held down.
+        # mouse button is physically held down. This polls the real key state
+        # rather than hooking events — see :mod:`holdwatch` for why the hook
+        # route kept failing silently.
         if self.state.get("activation_mode") == "hold":
             hold = self.state.get("hotkey_hold")
-            mouse_btn = MOUSE_TOKENS.get(hold)
-            if mouse_btn:
-                _bind(lambda: self._hook_mouse_hold(mouse_btn),
-                      f"hold button {hold}")
-            elif hold:
-                _bind(lambda: self._key_hooks.append(keyboard.hook_key(
-                    hold,
-                    lambda e: self._set_pull(e.event_type == "down"))),
-                    f"hold key {hold}")
+            if not self._hold.start(hold):
+                self._last_error = (
+                    f"hold button {hold!r} not recognised — pick one of the "
+                    f"preset buttons, or record a key")
 
         # Instant-click trigger, only while in "trigger" click mode. The
         # trigger can be a keyboard key/combo or a mouse button.
@@ -285,16 +313,6 @@ class WebApp:
                     keyboard.add_hotkey(trig, self.controller.trigger_click)),
                     f"trigger hotkey {trig}")
 
-    def _hook_mouse_hold(self, button: str) -> None:
-        """Press/release hooks for a mouse button used as the hold key."""
-        import mouse
-        self._mouse_hooks.append(mouse.on_button(
-            lambda: self._set_pull(True),
-            buttons=(button,), types=PRESS_TYPES))
-        self._mouse_hooks.append(mouse.on_button(
-            lambda: self._set_pull(False),
-            buttons=(button,), types=("up",)))
-
     def _hook_mouse_trigger(self, button: str) -> None:
         import mouse
         self._mouse_hooks.append(mouse.on_button(
@@ -302,6 +320,7 @@ class WebApp:
             buttons=(button,), types=PRESS_TYPES))
 
     def _clear_hotkeys(self) -> None:
+        self._hold.stop()
         try:
             import keyboard
             for h in self._hotkey_handles:
@@ -350,6 +369,14 @@ class WebApp:
                 "smoothness": s.smoothness,
                 "max_speed": s.max_speed,
                 "target_ema": s.target_ema,
+                "motion_response": s.motion_response,
+                "jitter_floor": s.jitter_floor,
+                "precision_px": s.precision_px,
+                "precision_slow": s.precision_slow,
+                "max_accel": s.max_accel,
+                "pointer_gain": s.pointer_gain,
+                "pointer_gain_auto": s.pointer_gain_auto,
+                "pointer_gain_measured": s.pointer_gain_measured,
                 "dwell_ms": s.dwell_ms,
                 "click_radius": s.click_radius,
                 "click_repeat": s.click_repeat,
@@ -534,6 +561,12 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, PAGE.encode("utf-8"), "text/html; charset=utf-8")
         elif self.path == "/api/state":
             self._json(self.app.state_payload())
+        elif self.path.startswith("/api/screenshot"):
+            png = self.app.screenshot_png()
+            if png is None:
+                self._json({"ok": False, "error": "capture failed"}, 503)
+            else:
+                self._send(200, png, "image/png")
         else:
             self._send(404, b"not found", "text/plain")
 

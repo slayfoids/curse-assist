@@ -115,26 +115,44 @@ def test_pull_cue_respects_audio_setting():
 
 # ------------------------------------------------- hold button: event plumbing
 
-def test_hold_button_survives_the_double_click_rewrite(fake_mouse):
-    """A quick re-press arrives as "double", not "down" -- it must still fire.
+def test_hold_mode_starts_a_watcher_for_the_chosen_button(monkeypatch,
+                                                          fake_mouse):
+    """Entering hold mode must actually arm something for the hold button.
 
-    The `mouse` package rewrites any press landing within the system
-    double-click time of the previous button event (including the preceding
-    release) into a "double". Listening for "down" alone dropped every quick
-    re-press, so hold mode worked once and then looked completely dead.
+    Hold no longer goes through a global hook — see :mod:`holdwatch` for the
+    three ways that kept failing silently. It polls the real key state, so the
+    check is that the watcher resolved the button and came up.
     """
-    app, st = make_app()
-    app._hook_mouse_hold("x")
+    monkeypatch.setitem(sys.modules, "keyboard", _FakeKeyboard())
+    st = AppState()
+    st.set("audio_cues", False)
+    st.set("activation_mode", "hold")
+    st.set("hotkey_hold", "MB4")
+    app = WebApp(st, open_browser=False)
+    app._save = lambda: None
+    try:
+        app._register_hotkeys()
+        assert app._hold.vk == 0x05        # VK_XBUTTON1
+        assert app._last_error == ""
+    finally:
+        app._hold.stop()
 
-    fake_mouse.emit("x", "down")          # first press: a plain "down"
-    assert st.get("pull_enabled") is True
-    fake_mouse.emit("x", "up")
-    assert st.get("pull_enabled") is False
 
-    fake_mouse.emit("x", "double")        # quick re-press: rewritten
-    assert st.get("pull_enabled") is True
-    fake_mouse.emit("x", "up")
-    assert st.get("pull_enabled") is False
+def test_unresolvable_hold_button_is_reported(monkeypatch, fake_mouse):
+    """A hold button we cannot poll must say so, not fail silently."""
+    monkeypatch.setitem(sys.modules, "keyboard", _FakeKeyboard())
+    st = AppState()
+    st.set("audio_cues", False)
+    st.set("activation_mode", "hold")
+    st.set("hotkey_hold", "not a real button")
+    app = WebApp(st, open_browser=False)
+    app._save = lambda: None
+    try:
+        app._register_hotkeys()
+        assert app._hold.vk is None
+        assert "not recognised" in app._last_error
+    finally:
+        app._hold.stop()
 
 
 def test_trigger_button_survives_the_double_click_rewrite(fake_mouse):
@@ -147,7 +165,7 @@ def test_trigger_button_survives_the_double_click_rewrite(fake_mouse):
     assert len(fired) == 2
 
 
-def test_one_bad_binding_does_not_block_the_hold_hook(monkeypatch, fake_mouse):
+def test_one_bad_binding_does_not_block_the_others(monkeypatch, fake_mouse):
     """One unusable key name must not take the later bindings down with it."""
     monkeypatch.setitem(sys.modules, "keyboard", _FakeKeyboard())
     st = AppState()
@@ -155,16 +173,18 @@ def test_one_bad_binding_does_not_block_the_hold_hook(monkeypatch, fake_mouse):
     st.set("hotkey_show_panel", "not-a-key")   # this binding raises
     st.set("activation_mode", "hold")
     st.set("hotkey_hold", "MB4")
+    st.set("click_mode", "trigger")
+    st.set("hotkey_trigger", "MB5")
     app = WebApp(st, open_browser=False)
     app._save = lambda: None
-
-    app._register_hotkeys()
-
-    # The hold hook still got registered, and the failure was reported.
-    assert any("x" in buttons for _cb, buttons, _t in fake_mouse.hooks)
-    assert "not-a-key" in app._last_error
-    fake_mouse.emit("x", "down")
-    assert st.get("pull_enabled") is True
+    try:
+        app._register_hotkeys()
+        # Both later bindings survived the earlier failure.
+        assert app._hold.vk == 0x05
+        assert any("x2" in buttons for _cb, buttons, _t in fake_mouse.hooks)
+        assert "not-a-key" in app._last_error
+    finally:
+        app._hold.stop()
 
 
 if __name__ == "__main__":

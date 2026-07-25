@@ -91,13 +91,29 @@ class CursorGlider:
     def __init__(self):
         self._ax = 0.0  # carried sub-pixel remainder
         self._ay = 0.0
+        self._speed = 0.0   # current pointer speed, px/s (for accel limiting)
+        # Measured ratio of pixels actually travelled to pixels requested.
+        # Windows scales relative mouse input by the pointer-speed slider and
+        # "enhance pointer precision", so on a low-sensitivity setting a
+        # requested 10 px move can land 4 px. Dividing by the measured gain
+        # makes the pull behave the same at any Windows pointer speed.
+        self._gain = 1.0
 
     def reset(self) -> None:
         self._ax = 0.0
         self._ay = 0.0
+        self._speed = 0.0
+
+    @property
+    def gain(self) -> float:
+        return self._gain
 
     def step(self, target_screen: Tuple[int, int], dt: float, tau: float,
-             max_speed_px_s: float, lock_px: float = 2.0) -> Tuple[int, int]:
+             max_speed_px_s: float, lock_px: float = 2.0,
+             max_accel_px_s2: float = 0.0,
+             precision_px: float = 0.0, precision_slow: float = 1.0,
+             gain_scale: float = 1.0, auto_gain: bool = True
+             ) -> Tuple[int, int]:
         cx, cy = get_cursor_pos()
         rx = target_screen[0] - cx
         ry = target_screen[1] - cy
@@ -106,8 +122,20 @@ class CursorGlider:
         # Close enough: land exactly on the target (imperceptible, pixel-perfect).
         if dist <= lock_px:
             self.reset()
-            move_relative(int(round(rx)), int(round(ry)))
+            move_relative(int(round(rx / max(self._gain, 0.05))),
+                          int(round(ry / max(self._gain, 0.05))))
             return get_cursor_pos()
+
+        # Precision zone: ease off near the target so the pointer settles onto
+        # it instead of darting the last few px and ringing around it. Scales
+        # smoothly from full speed at the edge to `precision_slow` at dead
+        # centre, so there is no discontinuity to feel.
+        if precision_px > 0 and dist < precision_px:
+            k = dist / precision_px
+            ease = precision_slow + (1.0 - precision_slow) * k
+            ease = max(0.02, min(1.0, ease))
+            max_speed_px_s *= ease
+            tau = tau / ease
 
         alpha = 1.0 - math.exp(-dt / max(tau, 1e-3))
         sx = rx * alpha
@@ -120,17 +148,46 @@ class CursorGlider:
             f = max_step / step
             sx *= f
             sy *= f
+            step = max_step
 
-        # Accumulate sub-pixel movement; emit only whole pixels, carry the rest.
-        self._ax += sx
-        self._ay += sy
+        # Acceleration limit: bound how fast the pointer's own speed may
+        # change. One bad target frame can then never fling the pointer — it
+        # can only ramp, and the next frame corrects it.
+        if max_accel_px_s2 > 0 and dt > 0:
+            want = step / dt
+            ceiling = self._speed + max_accel_px_s2 * dt
+            if want > ceiling and step > 0:
+                f = (ceiling * dt) / step
+                sx *= f
+                sy *= f
+                step = ceiling * dt
+            self._speed = step / dt
+        else:
+            self._speed = step / dt if dt > 0 else 0.0
+
+        # Compensate for the OS pointer gain, then accumulate sub-pixel
+        # movement; emit only whole pixels and carry the rest.
+        g = max(self._gain, 0.05) * max(gain_scale, 0.05)
+        self._ax += sx / g
+        self._ay += sy / g
         mx = int(self._ax)   # trunc toward zero
         my = int(self._ay)
         self._ax -= mx
         self._ay -= my
         if mx or my:
             move_relative(mx, my)
-        return get_cursor_pos()
+        nx, ny = get_cursor_pos()
+
+        # Learn the gain from what actually happened. Only large moves are
+        # informative -- a 1 px request rounds too coarsely to measure.
+        if auto_gain:
+            asked = math.hypot(mx, my)
+            if asked >= 4.0:
+                got = math.hypot(nx - cx, ny - cy)
+                if got > 0.0:
+                    obs = max(0.15, min(4.0, got / asked))
+                    self._gain += 0.08 * (obs - self._gain)
+        return nx, ny
 
 
 # --- Dwell click ----------------------------------------------------------

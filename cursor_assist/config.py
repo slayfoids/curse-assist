@@ -106,6 +106,36 @@ class AppState:
     max_speed: int = 25000           # px/second cap (higher = catches fast colors)
     target_ema: float = 0.45         # smoothing applied to the *target* point
 
+    # --- Fine tracking control -------------------------------------------
+    # How readily the target filter opens up as the target speeds up. Higher
+    # = follows fast motion with less lag; lower = stays smooth but trails.
+    motion_response: float = 1.0     # multiplier on the adaptive cutoff
+    # How hard a *stationary* target is filtered. Higher = calmer pointer on
+    # a still target, at the cost of a beat more lag when it starts moving.
+    jitter_floor: float = 1.0        # multiplier on the resting cutoff
+
+    # Precision zone: within this many px of the target the pointer eases off
+    # and steadies, so it settles instead of darting across the last few px
+    # (the "spasm" on arrival). 0 disables it.
+    # Defaults are deliberately mild: measured on the sim harness, a 60 px
+    # zone at 0.35 doubled the settle time (0.43 s -> 0.86 s), which is too
+    # sluggish to ship as standard. Turn them up for more damping.
+    precision_px: int = 40
+    precision_slow: float = 0.55     # speed multiplier at the very centre
+
+    # Acceleration limit: cap on how fast the pointer's own speed may change,
+    # in px/s^2. A hard cap means no single frame can fling the pointer, even
+    # if detection hands over a bad target for one frame. 0 disables it.
+    # High enough not to be felt in normal use; it only clips real flings.
+    max_accel: int = 300000
+
+    # Pointer gain: Windows scales relative mouse input by the pointer-speed
+    # slider and "enhance pointer precision", so a requested move of N px
+    # lands short on a low-sensitivity setting. The engine measures the real
+    # ratio and divides by it; this is an extra manual multiplier on top.
+    pointer_gain: float = 1.0
+    pointer_gain_auto: bool = True
+
     # --- Dwell click -----------------------------------------------------
     dwell_ms: int = 300              # how long to hold on target before click
     click_radius: int = 25           # px radius the cursor must hold within
@@ -169,6 +199,7 @@ class AppState:
     # --- Loop status (loop -> GUI, read-only for the GUI) ----------------
     loop_fps: float = 0.0
     last_target_found: bool = False
+    pointer_gain_measured: float = 1.0   # learned OS pointer gain (read-only)
 
     # Convenience helpers so callers don't have to remember the lock -------
     def get(self, name: str):

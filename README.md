@@ -41,6 +41,10 @@ pointer on things they want to interact with on their own screen.*
   figure, pose-adaptive bands, tunable part attraction.
 - 🖱️ **Toggle or Hold activation** — flip with a hotkey, or stay active only
   while a mouse side button is held. Audio cues: 2 high beeps on, 2 low off.
+- 📷 **Screenshot colour picker** — freeze a frame and click the exact pixel,
+  instead of chasing a live eyedropper that needs a steady click.
+- 🎚️ **Pointer calibration** — measures this PC's real pointer gain, so a low
+  Windows mouse sensitivity doesn't make the pull sluggish or fall short.
 - 🖲️ **Flexible clicking** — dwell auto-click, instant trigger key/button,
   repeat auto-fire, or fully manual.
 - 💾 **Saved configs** — snapshot your whole setup under a unique code like
@@ -231,6 +235,12 @@ within which the tool offers guidance.
 | **Smoothness** | 0 = responsive, 1 = long gentle glide. Motion is frame-rate independent. |
 | **Max speed** | Cap on how fast the pointer moves (px/sec, up to 100000). Higher = keeps up with a color that moves quickly. |
 | **Target steadiness** | Smooths out detection jitter so the pointer doesn't wobble. Adaptive: the filter eases off automatically as the target speeds up, so raising this steadies a resting target without adding lag to a moving one. |
+| **Motion response** | How readily tracking opens up as the target moves. Higher = less lag on fast movement, at the cost of passing through more detection noise. |
+| **Jitter floor** | How hard a *stationary* target is filtered. Higher = calmer pointer at rest. Separated from Motion response so the two can be traded off independently rather than both riding on one slider. |
+| **Precision zone** | Within this many px of the target the pointer eases off and settles, instead of darting the last stretch and ringing around it. It fades out as the target starts moving, so it never holds the pointer back mid-chase. 0 = off. |
+| **Zone slowdown** | How much the pointer is slowed at the centre of the precision zone. Lower = gentler arrival, slower settle. |
+| **Accel limit** | Caps how fast the pointer's own speed may change (px/s²), so a single bad detection frame can only ramp the pointer, never fling it. 0 = off. |
+| **Pointer calibration** | Windows scales relative mouse input by the pointer-speed slider and "enhance pointer precision", so on a **low-sensitivity setup** a requested move lands short and the pull feels sluggish. The engine measures the real ratio each move and divides by it, keeping speed and reach the same at any sensitivity. **Extra gain** is a manual multiplier on top if it still under-reaches. |
 | **Click mode** | **Dwell** (click after resting on the target), **Key** (a chosen key issues the click), or **Off** (click manually). |
 | **Dwell time** | In dwell mode, how long to rest before a click is issued (50–1500 ms). |
 | **Click key/button** | In key mode, what issues the click: a keyboard key, or a mouse button (RMB / MMB / side buttons) via quick-pick buttons — no need to record. |
@@ -324,6 +334,7 @@ mid-flight and throwing away the velocity the lead depends on.
 | `segmentation.py` | Split a figure's bounding box into named body regions. |
 | `targeting.py` | Target lock, best-coverage snap, teleport guard, one-euro smoothing + lead (downscale-aware). |
 | `cursor.py` | `SendInput` relative move + click; time-based ease; dwell machine. |
+| `holdwatch.py` | Hold-to-activate by polling real key state (no global hook). |
 | `mouse_block.py` | Optional low-level hook to steady the pointer against tremor. |
 | `overlay.py` | Transparent click-through assist-area circle overlay. |
 | `controller.py` | Decoupled detection + ~180 Hz movement threads. |

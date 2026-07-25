@@ -162,6 +162,11 @@ class TargetTracker:
 
     def __init__(self, ema: float = 0.35):
         self._ema = ema
+        # Multipliers on the two halves of the adaptive cutoff, exposed in the
+        # panel so following and steadiness can be traded off independently
+        # instead of both riding on one slider.
+        self._response = 1.0   # how far the cutoff opens with target speed
+        self._floor = 1.0      # how hard a *resting* target is filtered
         self._smoothed: Optional[np.ndarray] = None  # screen-space (x, y) float
         self._vel = np.zeros(2)                       # smoothed velocity px/s
         self._prev_raw: Optional[np.ndarray] = None
@@ -177,6 +182,10 @@ class TargetTracker:
 
     def set_ema(self, ema: float) -> None:
         self._ema = max(0.0, min(1.0, ema))
+
+    def set_tuning(self, response: float = 1.0, floor: float = 1.0) -> None:
+        self._response = max(0.05, min(4.0, response))
+        self._floor = max(0.05, min(4.0, floor))
 
     def speed(self) -> float:
         """Current estimated target speed in px/s (0 when static)."""
@@ -468,8 +477,8 @@ class TargetTracker:
         # target is smoothed hard (steady, precise) and a fast one is followed
         # almost immediately (little lag) — without the caller choosing.
         dt_f = dt if dt > 1e-3 else self._dt
-        cutoff = (MIN_CUTOFF_BASE + self._ema * MIN_CUTOFF_SPAN
-                  + CUTOFF_BETA * speed)
+        cutoff = ((MIN_CUTOFF_BASE + self._ema * MIN_CUTOFF_SPAN) / self._floor
+                  + CUTOFF_BETA * speed * self._response)
         self._smoothed = self._smoothed + _alpha(dt_f, cutoff) * (
             raw - self._smoothed)
 

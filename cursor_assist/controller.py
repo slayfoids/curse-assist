@@ -43,6 +43,11 @@ PURSUIT_KNEE = 80.0        # px/s at which shortening begins
 PURSUIT_SCALE = 500.0      # px/s of extra speed per halving of the constant
 PURSUIT_FLOOR = 0.14       # never shorten below this fraction of the base
 
+# The precision zone is for *settling* onto a target, not for chasing one.
+# Easing off near a moving target would mean never catching it, so the zone
+# fades out as the target's own speed rises and is gone by this speed.
+PRECISION_FADE_SPEED = 220.0   # px/s
+
 
 class AssistController:
     def __init__(self, state: AppState, on_dwell_start: Optional[Callable] = None,
@@ -181,6 +186,8 @@ class AssistController:
                          if scale < 0.999 else frame)
 
                 self._tracker.set_ema(snap.target_ema)
+                self._tracker.set_tuning(response=snap.motion_response,
+                                         floor=snap.jitter_floor)
                 min_area = max(1, int(snap.min_contour_area * scale * scale))
                 shapes, mask = find_shapes(small, snap.colors,
                                            snap.detect_thin_border, min_area)
@@ -262,12 +269,26 @@ class AssistController:
             if sp > PURSUIT_KNEE:
                 tau *= max(PURSUIT_FLOOR,
                            1.0 / (1.0 + (sp - PURSUIT_KNEE) / PURSUIT_SCALE))
+            # Fade the precision zone out as the target starts moving (see
+            # PRECISION_FADE_SPEED) so it steadies an arrival without ever
+            # holding the pointer back during a chase.
+            prec = float(self._state.get("precision_px"))
+            if prec > 0:
+                prec *= max(0.0, 1.0 - sp / PRECISION_FADE_SPEED)
+
             cursor_pos = self._glider.step(
                 target_screen=target,
                 dt=dt,
                 tau=tau,
                 max_speed_px_s=float(self._state.get("max_speed")),
+                max_accel_px_s2=float(self._state.get("max_accel")),
+                precision_px=prec,
+                precision_slow=float(self._state.get("precision_slow")),
+                gain_scale=float(self._state.get("pointer_gain")),
+                auto_gain=bool(self._state.get("pointer_gain_auto")),
             )
+            self._state.set("pointer_gain_measured",
+                            round(self._glider.gain, 3))
             self._dwell.update(
                 cursor_screen=cursor_pos,
                 target_screen=target,

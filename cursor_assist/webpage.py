@@ -159,7 +159,11 @@ PAGE = r"""<!doctype html>
 
   /* --------------------------------------------------------------- controls - */
   .row{display:flex;align-items:center;gap:12px;margin:11px 0}
-  .row label{flex:0 0 128px;color:var(--fg);font-size:13px}
+  /* Labels wrap rather than clip: a fixed basis with no wrapping meant any
+     font fallback or display-scaling change cut the text off inside the
+     card's overflow:hidden. */
+  .row label{flex:0 0 132px;color:var(--fg);font-size:13px;
+    overflow-wrap:break-word;hyphens:auto}
   .row .val{flex:0 0 auto;min-width:48px;text-align:right;
     font-variant-numeric:tabular-nums;color:#fff;font-weight:700;font-size:13px}
   input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:6px;
@@ -235,7 +239,8 @@ PAGE = r"""<!doctype html>
   input.txt:focus{border-color:var(--a1);box-shadow:0 0 0 3px rgba(168,85,247,.2)}
   input.txt:hover{border-color:var(--edge2)}
   .hk{display:flex;align-items:center;gap:8px;margin:9px 0}
-  .hk label{flex:0 0 88px;color:var(--muted);font-size:12px}
+  .hk label{flex:0 0 108px;color:var(--muted);font-size:12px;
+    overflow-wrap:break-word;hyphens:auto}
   .hk input{flex:1}
   .hint{color:var(--muted2);font-size:11.5px;margin-top:3px;line-height:1.5}
   .kbd{display:inline-block;padding:1px 7px;border-radius:6px;background:rgba(233,213,255,.08);
@@ -339,6 +344,49 @@ PAGE = r"""<!doctype html>
       feel, not speed of detection.</div>
   </div>
 
+  <div class="card s3" style="animation-delay:.07s"><h2><span class="ico">◈</span>Fine tracking</h2>
+    <div class="row"><label>Motion response</label>
+      <input type="range" data-key="motion_response" min="0.2" max="3" step="0.1">
+      <span class="val"></span></div>
+    <div class="row"><label>Jitter floor</label>
+      <input type="range" data-key="jitter_floor" min="0.2" max="3" step="0.1">
+      <span class="val"></span></div>
+    <div class="row"><label>Precision zone</label>
+      <input type="range" data-key="precision_px" min="0" max="300" step="10">
+      <span class="val"></span></div>
+    <div class="row"><label>Zone slowdown</label>
+      <input type="range" data-key="precision_slow" min="0.05" max="1" step="0.05">
+      <span class="val"></span></div>
+    <div class="row"><label>Accel limit</label>
+      <input type="range" data-key="max_accel" min="0" max="400000" step="10000">
+      <span class="val"></span></div>
+    <div class="hint">
+      <b>Motion response</b> — how readily tracking opens up as the target moves
+      (higher = less lag on fast movement).<br>
+      <b>Jitter floor</b> — how hard a <i>still</i> target is filtered
+      (higher = calmer pointer at rest).<br>
+      <b>Precision zone</b> — within this many px the pointer eases off and
+      settles instead of darting the last stretch. 0 = off.<br>
+      <b>Accel limit</b> — caps how fast the pointer's own speed can change, so
+      one bad detection frame can't fling it. 0 = off.
+    </div>
+  </div>
+
+  <div class="card s3" style="animation-delay:.08s"><h2><span class="ico">🖱</span>Pointer calibration</h2>
+    <div class="toggle"><span>Auto-calibrate<br><small>learn this PC's pointer speed</small></span>
+      <label class="switch"><input type="checkbox" data-key="pointer_gain_auto">
+      <span class="track"></span></label></div>
+    <div class="row"><label>Extra gain</label>
+      <input type="range" data-key="pointer_gain" min="0.25" max="4" step="0.05">
+      <span class="val"></span></div>
+    <div class="hint">Windows scales relative mouse input by the pointer-speed
+      slider and “enhance pointer precision”, so on a <b>low-sensitivity mouse
+      setup</b> a requested move lands short and the pull feels sluggish. The
+      engine measures the real ratio and divides by it, so it stays quick at any
+      sensitivity. Measured now: <b id="gainNow">—</b>. Raise <b>Extra gain</b>
+      only if it still under-reaches.</div>
+  </div>
+
   <div class="card s3" style="animation-delay:.09s"><h2><span class="ico">⌖</span>Targeting</h2>
     <div class="toggle"><span>Lock onto one target<br><small>hold it until it's gone</small></span>
       <label class="switch"><input type="checkbox" data-key="lock_target">
@@ -427,7 +475,20 @@ PAGE = r"""<!doctype html>
       <input type="color" id="picker" style="width:0;height:0;opacity:0;position:absolute">
       <button class="btn accent" onclick="document.getElementById('picker').click()">＋ Pick</button>
       <button class="btn" onclick="eyedrop()" id="eyeBtn">⦿ Eyedropper</button>
+      <button class="btn" onclick="shotOpen()">📷 Screenshot</button>
       <button class="btn" onclick="act('clear_colors')">Clear</button>
+    </div>
+    <div id="shotWrap" style="display:none;margin-bottom:12px">
+      <div class="hint" style="margin:0 0 8px">Click any pixel to add its colour.
+        Scroll to zoom the preview. <b id="shotHint">—</b></div>
+      <div style="position:relative;overflow:auto;max-height:340px;
+                  border:1px solid var(--edge2);border-radius:12px">
+        <canvas id="shotCv" style="display:block;cursor:crosshair;max-width:100%"></canvas>
+      </div>
+      <div class="btns" style="margin-top:8px">
+        <button class="btn" onclick="shotGrab()">↻ Retake</button>
+        <button class="btn" onclick="shotClose()">Close</button>
+      </div>
     </div>
     <div class="row"><label>Sensitivity</label>
       <input type="range" data-key="sensitivity" min="2" max="45" step="1">
@@ -571,6 +632,42 @@ $$('input.txt').forEach(el=>{el.addEventListener('focus',()=>focused=el);
 
 function togglePull(){act('toggle_pull').then(render);}
 function eyedrop(){act('eyedrop');flash('Eyedropper armed — click any pixel on screen (Esc cancels)');}
+
+/* ---- screenshot colour picker -------------------------------------------
+   Freezes one frame of the capture source and lets the colour be clicked at
+   leisure. The live eyedropper needs the colour still on screen *and* a
+   steady click, which is the exact difficulty this tool exists to help with. */
+let shotImg=null;
+async function shotGrab(){
+  $('#shotHint').textContent='grabbing…';
+  try{
+    const r=await fetch('/api/screenshot?t='+Date.now());
+    if(!r.ok){$('#shotHint').textContent='capture failed — check the Capture card';return;}
+    const blob=await r.blob();
+    const img=new Image();
+    img.onload=()=>{
+      shotImg=img;
+      const cv=$('#shotCv');cv.width=img.width;cv.height=img.height;
+      cv.getContext('2d',{willReadFrequently:true}).drawImage(img,0,0);
+      $('#shotHint').textContent=img.width+'×'+img.height+' — click a pixel';
+    };
+    img.src=URL.createObjectURL(blob);
+  }catch(e){$('#shotHint').textContent='capture failed';}
+}
+function shotOpen(){$('#shotWrap').style.display='';shotGrab();}
+function shotClose(){$('#shotWrap').style.display='none';shotImg=null;}
+$('#shotCv').addEventListener('click',async e=>{
+  if(!shotImg)return;
+  const cv=$('#shotCv'),r=cv.getBoundingClientRect();
+  // Map the click from displayed size back to true pixel coordinates.
+  const x=Math.floor((e.clientX-r.left)*(cv.width/r.width));
+  const y=Math.floor((e.clientY-r.top)*(cv.height/r.height));
+  const d=cv.getContext('2d',{willReadFrequently:true}).getImageData(x,y,1,1).data;
+  const hex='#'+[d[0],d[1],d[2]].map(v=>v.toString(16).padStart(2,'0')).join('');
+  await act('add_color',{hex});
+  $('#shotHint').textContent='added '+hex+' at '+x+','+y;
+  load();
+});
 function applyCapture(){act('apply_capture',{
   monitor:+$('#cap_monitor').value||0, obs_device_index:+$('#cap_obs').value||0,
   left:+$('#cap_left').value||0, top:+$('#cap_top').value||0,
@@ -652,6 +749,9 @@ function render(){
   $('#fps').textContent=(S.target_found?'● ':'')+(S.fps||0)+' fps';
   $('#dot').classList.toggle('live',!!S.target_found);
   $('#statFps').textContent=(S.fps||0)+' fps';
+  const g=S.pointer_gain_measured;
+  $('#gainNow').textContent=(g==null?'—':(g.toFixed(2)+'×'+(g<0.75?
+    '  (low sensitivity — being compensated)':'')));
   const st=$('#statTarget');
   st.textContent=S.target_found?'locked':'none';
   st.className='v '+(S.target_found?'ok':'bad');
