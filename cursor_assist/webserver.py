@@ -511,6 +511,7 @@ class WebApp:
                 "hotkey_trigger": s.hotkey_trigger,
                 "fps": s.loop_fps,
                 "target_found": s.last_target_found,
+                "target_holding": s.target_holding,
                 "eyedropping": self._eyedropping,
                 "error": self._last_error,
             }
@@ -622,8 +623,31 @@ class WebApp:
             code = persistence.save_config(self.state,
                                            str(data.get("name", "")))
             return {"ok": True, "code": code}
+        elif action == "share_config":
+            return {"ok": True,
+                    "code": persistence.encode_share(
+                        self.state, str(data.get("name", "")))}
         elif action == "load_config":
-            ok = persistence.load_config(self.state, str(data.get("code", "")))
+            # One box takes both kinds: a six-character code naming a config
+            # saved on this machine, or a long share code from someone else
+            # that carries the whole setup inside it. Asking the user to know
+            # which sort of code they were handed serves nobody.
+            raw = str(data.get("code", ""))
+            shared = raw.strip().upper().startswith(persistence.SHARE_PREFIX)
+            if shared:
+                name = persistence.apply_share(self.state, raw)
+                ok = name is not None
+                if ok:
+                    # Keep a local copy so an imported setup can be returned to
+                    # later without needing the original message again.
+                    code = persistence.save_config(
+                        self.state, name or "shared setup")
+                    self._register_hotkeys()
+                    self._save()
+                    return {"ok": True, "shared": True, "name": name,
+                            "code": code}
+                return {"ok": False, "shared": True}
+            ok = persistence.load_config(self.state, raw)
             if ok:
                 self._register_hotkeys()
                 self._save()

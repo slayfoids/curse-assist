@@ -24,7 +24,8 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Dict, List, Optional, Tuple
+from collections import deque
+from typing import Deque, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -39,13 +40,42 @@ from .segmentation import contour_points_in_region, segment_regions
 # auto-scales with frame rate: more lead when detection is slow, less when fast.
 # A static target is below LEAD_DEADZONE and gets zero prediction, so precision
 # on a still target is never affected.
-LEAD_BASE = 0.02
-LEAD_FRAMES = 1.8
+# Most of the pipeline lag is *fixed* — smoothing and the movement easing take
+# the same time however often the screen is scanned. Only the sampling part
+# shrinks with the scan rate. Weighting the lead almost entirely on the
+# detection interval therefore removed compensation the pointer still needed:
+# raising the scan rate made tracking measurably *worse*, which is the opposite
+# of what raising it is for. Measured lag against a 500 px/s target went 12.3 px
+# at 60 scans/s to 16.3 px at 240. Rebalanced onto the fixed term, the same
+# sweep reads 12.2 / 10.8 / 9.6 — faster scanning now helps, as expected.
+LEAD_BASE = 0.040
+LEAD_FRAMES = 0.6
 LEAD_MIN_S = 0.02
 LEAD_MAX_S = 0.14
 LEAD_DEADZONE = 60.0
 LEAD_MAX = 140.0      # absolute cap (px) so a fast flick can't overshoot wildly
 LEAD_WARMUP = 6       # frames of continuous tracking before lead kicks in
+
+# Travelling vs vibrating.
+#
+# A velocity estimate says how fast the target point is moving, not whether it
+# is going anywhere. Those come apart badly when detection makes the point
+# oscillate — a figure that keeps breaking into two pieces behind an occlusion
+# alternates between the whole centroid and a fragment's, which reads as
+# ~900 px/s from something standing still. Everything downstream then treats it
+# as a sprinting target: the lead throws the pointer *past* it (measured landing
+# 23 px outside the range of both real positions), the adaptive cutoff stops
+# filtering just when filtering is most needed, and the pursuit easing snaps
+# tight. That is the "lock makes it spasm" report.
+#
+# Straightness — net displacement over distance travelled, across a short
+# window — separates the two. Genuine travel scores near 1. Vibration scores
+# near 0 because the path cancels itself out. It is measured over a window
+# rather than frame to frame, which is what makes it robust: a single direction
+# change during real travel barely moves it.
+STRAIGHT_WINDOW = 10      # samples
+STRAIGHT_MIN = 0.35       # at or below this, the target is not going anywhere
+STRAIGHT_FULL = 0.70      # at or above this, treat the motion as real travel
 
 # --- Adaptive smoothing (one-euro) ------------------------------------------
 # Jitter and lag pull in opposite directions: smoothing hard kills detection
@@ -90,8 +120,26 @@ def _alpha(dt: float, cutoff_hz: float) -> float:
 
 # Target lock.
 LOCK_MATCH_MIN = 70.0    # screen px; base radius for re-identifying the lock
-LOCK_GRACE_S = 0.40      # keep aiming at a vanished target this long before
-                         # releasing the lock and picking a new one
+LOCK_MATCH_MAX_MULT = 3.0  # hard ceiling on how far the match radius may open
+                           # up for a stale lock, as a multiple of its base
+
+# How long the aim keeps pointing at a target that stopped being detected.
+#
+# This exists so a colour that drops out for a frame or two does not cause the
+# lock to churn. It was a flat 0.40 s, which turned out to be the single
+# largest source of latency in the whole pipeline: measured end to end, the
+# pointer took **418 ms** to react to a target moving somewhere new, against
+# 10 ms with the lock switched off, and the delay tracked this constant
+# exactly. Worse, what the user sees is the aim freezing on empty screen and
+# then snapping across — which reads as the assist spasming, not as lag.
+#
+# So it is split by what is actually on screen. With nothing else detected the
+# target probably *is* flickering and there is nothing better to aim at anyway,
+# so a short hold is free. With other candidates visible, holding a ghost is a
+# refusal to look at evidence that is right there, and the hold is barely
+# longer than one frame.
+LOCK_GRACE_S = 0.18       # nothing else detected
+LOCK_GRACE_BUSY_S = 0.06  # other candidates are visible
 
 # Max-coverage snap.
 SNAP_OFF_GRACE_S = 0.30  # brief mask flicker doesn't reset the on-color timer
@@ -229,11 +277,18 @@ class TargetTracker:
         self._vel = np.zeros(2)                       # smoothed velocity px/s
         self._prev_raw: Optional[np.ndarray] = None
         self._prev_t: Optional[float] = None
+        # Recent raw positions, for telling travel apart from vibration.
+        self._recent: Deque[np.ndarray] = deque(maxlen=STRAIGHT_WINDOW)
+        self._straight = 1.0
+        # Where the previous frame's pick landed, so "is this the same target"
+        # can be answered when the lock is switched off too.
+        self._last_pick: Optional[Tuple[float, float]] = None
         self._dt = 1.0 / 60.0                         # smoothed detection interval
         self._track_frames = 0                        # frames on the same target
         # Target lock (screen space so it survives detect-scale changes).
         self._lock: Optional[Tuple[float, float]] = None
         self._lock_seen = 0.0                         # last time the lock matched
+        self._matched = False                         # a real blob, this frame
         # Bounding box of the blob matched *this* frame, in detection coords.
         # The snap is confined to it, so it can never re-aim onto a neighbour.
         self._lock_box: Optional[Tuple[int, int, int, int]] = None
@@ -249,9 +304,34 @@ class TargetTracker:
         self._response = max(0.05, min(4.0, response))
         self._floor = max(0.05, min(4.0, floor))
 
-    def speed(self) -> float:
-        """Current estimated target speed in px/s (0 when static)."""
+    def matched(self) -> bool:
+        """Whether a real blob was identified this frame.
+
+        Distinct from "a target was returned": during the grace a remembered
+        position is still published, and a caller steering a follow window has
+        to know the difference or it will keep centring on a memory.
+        """
+        return self._matched
+
+    def raw_speed(self) -> float:
+        """Speed of the target *point*, including detection vibration."""
         return float(np.hypot(self._vel[0], self._vel[1]))
+
+    def straightness(self) -> float:
+        """0 = vibrating on the spot, 1 = travelling in a consistent direction."""
+        return self._straight
+
+    def speed(self) -> float:
+        """How fast the target is actually *travelling*, in px/s.
+
+        Damped by straightness, so a point that is merely jittering does not
+        read as a fast-moving target. Everything that reacts to speed — the
+        lead, the adaptive cutoff, the pursuit easing, the follow-window size,
+        the lock's match radius — wants this rather than the raw figure, since
+        all of them are decisions about a target that is going somewhere.
+        """
+        gate = (self._straight - STRAIGHT_MIN) / (STRAIGHT_FULL - STRAIGHT_MIN)
+        return self.raw_speed() * max(0.0, min(1.0, gate))
 
     def reset(self) -> None:
         self._smoothed = None
@@ -261,6 +341,9 @@ class TargetTracker:
         self._track_frames = 0
         self._lock = None
         self._lock_box = None
+        self._last_pick = None
+        self._recent.clear()
+        self._straight = 1.0
         self._on_color_since = None
         self._off_color_at = None
 
@@ -281,6 +364,7 @@ class TargetTracker:
         snap_radius: int = 0,
         snap_after_ms: int = 1000,
         part_attraction: float = 1.0,
+        windowed: bool = False,
     ) -> Optional[Tuple[int, int]]:
         """Return a smoothed screen-space target, or ``None`` if none found.
 
@@ -317,7 +401,13 @@ class TargetTracker:
             # a stale box from the previous frame would confine the search to
             # where the target used to be.
             self._lock_box = None
-            target_det = self._hold_lock_det(now, ox, oy, scale)
+            self._matched = False
+            # An empty *follow window* is not evidence that the target left the
+            # screen — only that it left this box, which is the ordinary way a
+            # moving target behaves. Treating the two the same is what made the
+            # aim sit on empty screen for the full grace before catching up.
+            target_det = self._hold_lock_det(now, ox, oy, scale,
+                                             alternatives=windowed)
             if target_det is None:
                 self.reset()
                 return None
@@ -377,6 +467,7 @@ class TargetTracker:
         # Back to screen space (undo the downscale), then smooth.
         raw = np.array([ox + target_det[0] * inv, oy + target_det[1] * inv],
                        dtype=np.float64)
+        self._last_pick = (float(raw[0]), float(raw[1]))
         return self._smooth(raw, now, switched)
 
     # -------------------------------------------------------------- selection
@@ -394,6 +485,7 @@ class TargetTracker:
                           s.area, s.bbox))
 
         self._lock_box = None
+        self._matched = False
 
         # 1) Try to re-identify the locked target among this frame's blobs.
         if lock_enabled and self._lock is not None:
@@ -407,18 +499,32 @@ class TargetTracker:
                     best_d, best = d, (px, py, diag, bbox)
             if best is not None:
                 # Allow more drift for big blobs, fast targets, and stale locks.
-                match_r = (max(LOCK_MATCH_MIN * scale, 0.8 * best[2])
-                           + self.speed() * scale
-                           * max(0.0, now - self._lock_seen) * 1.5)
+                # The allowance for a stale lock is capped: it grew without
+                # bound while the target was missing, so after a fraction of a
+                # second any blob anywhere on screen satisfied it and was
+                # adopted as "the same target" — a re-identification error
+                # dressed up as continuous motion.
+                base_r = max(LOCK_MATCH_MIN * scale, 0.8 * best[2])
+                stale = min(max(0.0, now - self._lock_seen), LOCK_GRACE_S)
+                match_r = min(base_r + self.speed() * scale * stale * 1.5,
+                              base_r * LOCK_MATCH_MAX_MULT)
                 in_fov = (r_det is None or
                           math.hypot(best[0] - cx, best[1] - cy) <= 1.3 * r_det)
                 if best_d <= match_r and in_fov:
                     self._lock = (ox + best[0] * inv, oy + best[1] * inv)
                     self._lock_seen = now
                     self._lock_box = best[3]
-                    return (best[0], best[1]), False
-            # Lock missed this frame: hold position briefly, then release.
-            held = self._hold_lock_det(now, ox, oy, scale)
+                    self._matched = True
+                    # A match that had to stretch a long way is a different
+                    # object, not the same one moving — say so, so the
+                    # smoothing restarts instead of feeding the jump to the
+                    # velocity estimate and the lead.
+                    stretched = best_d > base_r
+                    return (best[0], best[1]), stretched
+            # Lock missed this frame. Other blobs are on screen, so this is the
+            # short hold — long enough to ride out a dropped frame, not long
+            # enough to keep aiming at a memory.
+            held = self._hold_lock_det(now, ox, oy, scale, alternatives=True)
             if held is not None:
                 return held, False
             self._lock = None
@@ -428,24 +534,46 @@ class TargetTracker:
         # the real target wins, but a much closer blob still wins outright.
         best = None
         best_s = None
+        best_diag = 0.0
         for (px, py, diag, area, bbox) in cands:
             d = math.hypot(px - cx, py - cy)
             if r_det is not None and d > r_det:
                 continue
             score = d / (max(area, 1.0) ** 0.15)
             if best_s is None or score < best_s:
-                best_s, best = score, (px, py, bbox)
+                best_s, best, best_diag = score, (px, py, bbox), diag
         if best is None:
             return None, False
         self._lock_box = best[2]
+        self._matched = True
         if lock_enabled:
             self._lock = (ox + best[0] * inv, oy + best[1] * inv)
             self._lock_seen = now
-        return (best[0], best[1]), True
+        # Is this the same thing we were aiming at last frame?
+        #
+        # This used to answer "yes, always new" unconditionally, which is the
+        # path every frame takes with the lock switched *off* — so with lock
+        # off the smoothing, the deadband and the lead were reset on every
+        # single frame and never did anything at all. The pointer was riding
+        # raw detection output.
+        switched = True
+        if self._last_pick is not None:
+            near = max(LOCK_MATCH_MIN * scale, 0.8 * best_diag)
+            switched = math.hypot(best[0] - (self._last_pick[0] - ox) * scale,
+                                  best[1] - (self._last_pick[1] - oy) * scale
+                                  ) > near
+        return (best[0], best[1]), switched
 
-    def _hold_lock_det(self, now, ox, oy, scale):
-        """Last known lock position (detection coords) while within grace."""
-        if self._lock is None or (now - self._lock_seen) > LOCK_GRACE_S:
+    def _hold_lock_det(self, now, ox, oy, scale, alternatives: bool = False):
+        """Last known lock position (detection coords) while within grace.
+
+        ``alternatives`` says whether this frame detected anything else. If it
+        did, the hold is cut short — continuing to aim at a remembered position
+        while a real target sits on screen is what made the assist feel like it
+        had frozen.
+        """
+        grace = LOCK_GRACE_BUSY_S if alternatives else LOCK_GRACE_S
+        if self._lock is None or (now - self._lock_seen) > grace:
             return None
         return ((self._lock[0] - ox) * scale, (self._lock[1] - oy) * scale)
 
@@ -526,6 +654,28 @@ class TargetTracker:
             elif (now - self._off_color_at) > SNAP_OFF_GRACE_S:
                 self._on_color_since = None
 
+    # ----------------------------------------------------------- straightness
+    def _update_straightness(self, raw: np.ndarray) -> None:
+        """Net displacement over distance travelled, across a short window.
+
+        Near 1 while the target crosses the screen; near 0 while the detection
+        point flips between two places, because the path cancels itself out.
+        Held at 1 until the window fills so a fresh target is never treated as
+        vibrating on the strength of two samples.
+        """
+        self._recent.append(raw.copy())
+        if len(self._recent) < 4:
+            self._straight = 1.0
+            return
+        pts = list(self._recent)
+        path = 0.0
+        for a, b in zip(pts, pts[1:]):
+            path += float(np.hypot(b[0] - a[0], b[1] - a[1]))
+        net = float(np.hypot(pts[-1][0] - pts[0][0], pts[-1][1] - pts[0][1]))
+        # Below a pixel or so of total movement there is nothing to judge, and
+        # the ratio would be noise divided by noise.
+        self._straight = 1.0 if path < 2.0 else max(0.0, min(1.0, net / path))
+
     # -------------------------------------------------------------- smoothing
     def _smooth(self, raw: np.ndarray, now: float,
                 switched: bool) -> Tuple[int, int]:
@@ -538,6 +688,9 @@ class TargetTracker:
             self._prev_raw = raw
             self._prev_t = now
             self._track_frames = 0
+            self._recent.clear()
+            self._recent.append(raw.copy())
+            self._straight = 1.0
             return int(round(raw[0])), int(round(raw[1]))
 
         dt = now - self._prev_t
@@ -568,6 +721,7 @@ class TargetTracker:
         self._prev_raw = raw
         self._prev_t = now
         self._track_frames += 1
+        self._update_straightness(raw)
 
         speed = self.speed()
 
@@ -591,10 +745,12 @@ class TargetTracker:
 
         # Lead the target when it's really moving — and only after the velocity
         # estimate has warmed up on this target, so a fresh lock never flings.
-        # Unchanged in strength: the wrong-way lead that used to fling the
-        # pointer on a direction change came from the stale velocity feeding
-        # it, which is fixed above, not from the lead being too large. Gating
-        # it on heading consistency was measured and made every case worse.
+        #
+        # ``speed`` here is already gated by straightness, so a target that is
+        # vibrating rather than travelling gets no lead at all. That is the
+        # fix for the lock spasm: an oscillating detection point read as
+        # ~900 px/s and the lead threw the pointer 23 px beyond the range of
+        # both positions it was actually alternating between.
         out = self._smoothed
         if speed > LEAD_DEADZONE and self._track_frames >= LEAD_WARMUP:
             lead_time = min(LEAD_MAX_S,

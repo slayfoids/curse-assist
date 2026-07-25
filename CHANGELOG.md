@@ -9,6 +9,76 @@ tell which build you are running.
 
 ---
 
+## v1.0.8
+
+**The lock's latency and its "spasms" were the same bug. Plus share codes.**
+
+- **Target lock no longer freezes then snaps.** Two reports — "there's still
+  some latency" and "lock on target completely breaks it" — turned out to be
+  one cause. When the locked blob wasn't matched in a frame, the aim kept
+  pointing at where it *used to be* for the full grace period before looking
+  anywhere else. Measured end to end, the pointer took **418 ms** to react to a
+  target appearing somewhere new, against 10 ms with the lock switched off, and
+  the delay tracked the grace constant exactly. What that looks like on screen
+  is the aim freezing on empty space and then lurching across.
+  - The grace now depends on what is actually on screen: **0.06 s** when other
+    candidates are visible (holding a memory while a real target sits there is
+    a refusal to look at evidence), **0.18 s** when nothing at all was detected
+    and there is nothing better to aim at anyway.
+  - An empty *follow window* no longer counts as "the target vanished" — it
+    means the target left that box, which is just what moving targets do. The
+    window now widens on each consecutive miss instead of staring at the one
+    place the target is known not to be.
+  - Reaction time **418 ms → 63 ms**, of which target-follow now accounts for
+    5 ms rather than 136 ms.
+- **The lead no longer flings the pointer at a target that isn't going
+  anywhere.** A velocity estimate says how fast the target *point* is moving,
+  not whether it is travelling. A figure that keeps breaking into two pieces
+  behind an occlusion alternates between two centroids, which reads as ~900 px/s
+  from something standing still — and the lead then threw the pointer 23 px
+  *beyond the range of both positions it was alternating between*. Speed is now
+  gated by **straightness** (net displacement over distance travelled, across a
+  short window), which is near 1 for real travel and near 0 for vibration.
+  Everything that reacts to speed uses the gated figure. Peak pointer speed in
+  that scenario: **3474 px/s → 1973 px/s**, matching lock-off exactly.
+- **Lock off had no smoothing at all.** Every frame reported itself as a fresh
+  target, so the filter, the deadband and the lead reset each frame and the
+  pointer rode raw detection output. Fixed, and "is this the same target"
+  is now answered the same way whether the lock is on or off — which is why all
+  five stress scenarios now measure identically either way.
+- **A faster scan rate now actually helps.** Most of the pipeline lag is fixed
+  — smoothing and easing take the same time however often the screen is
+  scanned — but the lead was weighted almost entirely on the detection
+  interval, so raising the scan rate *removed* compensation the pointer still
+  needed. Tracking lag against a 500 px/s target used to get **worse** with
+  more scanning (12.3 px at 60/s → 16.3 px at 240/s); it now reads 11.3 → 10.0
+  → 9.2.
+- **Auto scan rate is now twice the display's refresh**, so a 60 Hz screen
+  scans at 120/s. Matching the refresh exactly is the right answer about
+  *information* — a screen shows no more than one new picture per refresh — but
+  not about *latency*: a scan lands at an arbitrary point inside the refresh
+  interval, so sampling at the refresh rate leaves half a frame of staleness on
+  average and sampling twice as often halves it. It is nearly free: a
+  follow-window scan costs 0.19 ms, so 120/s is about 2% of one core.
+- **Share codes: configs that work on someone else's PC.** Saved configs were a
+  file on one machine plus a code that only meant something to that machine.
+  **Get share code** now produces a single string that *contains* the whole
+  setup — 269 characters for a fully tuned one, 41 for a near-default — which
+  can be pasted into a chat message and loaded on any other install. No
+  account, no server, no internet.
+  - One box takes either kind of code; nobody has to know which sort they were
+    handed. Loading a shared setup also saves it locally so it can be returned
+    to later.
+  - Importing lays down defaults first, so you get the *sender's* setup rather
+    than a mixture with your own.
+  - A checksum means a code truncated by a chat client reports itself as
+    damaged instead of half-loading a configuration. Decompression is bounded,
+    and incoming values are type-checked before they reach the engine — these
+    now arrive from other people, so "it came out of JSON" stopped being a
+    reason to trust them.
+- The status tile now distinguishes **holding** from **locked**, so a pointer
+  riding out a detection gap is visibly doing that rather than looking stuck.
+
 ## v1.0.7
 
 **Best-coverage snap fixed, sensitivity handled at both extremes, a

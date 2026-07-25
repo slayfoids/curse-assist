@@ -157,6 +157,7 @@ PAGE = r"""<!doctype html>
   .stat .k{font-size:10px;letter-spacing:1.6px;color:var(--muted2);text-transform:uppercase;font-weight:700}
   .stat .v{font-size:19px;font-weight:750;margin-top:3px;font-variant-numeric:tabular-nums}
   .stat .v.ok{color:var(--on);text-shadow:0 0 14px rgba(194,107,255,.55)}
+  .stat .v.hold{color:#ffc46b}
   .stat .v.bad{color:var(--muted)}
 
   /* --------------------------------------------------------------- controls - */
@@ -373,6 +374,11 @@ PAGE = r"""<!doctype html>
   .cfg .nm{flex:1;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .cfg .nm i{color:var(--muted2)}
   .cfg .dt{font-size:11px;color:var(--muted2);white-space:nowrap}
+  .sharebox{width:100%;min-width:0;height:78px;resize:vertical;
+    background:var(--field);border:1px solid var(--edge2);color:#e2b8ff;
+    border-radius:11px;padding:9px 11px;outline:0;
+    font:600 11.5px/1.5 Consolas,ui-monospace,monospace;word-break:break-all}
+  .sharebox:focus{border-color:var(--a1);box-shadow:0 0 0 3px rgba(168,85,247,.2)}
 
   footer{display:flex;gap:10px;margin-top:30px;align-items:center}
   footer .note{color:var(--muted2);font-size:12px}
@@ -760,13 +766,32 @@ PAGE = r"""<!doctype html>
     <div class="fields">
       <input class="txt" id="cfg_name" placeholder="config name (optional)"
         style="flex:1;min-width:160px;width:auto">
-      <button class="btn accent" onclick="saveConfig()">💾 Save current setup</button>
-      <span class="lbl" style="margin-left:12px">Load by code</span>
-      <input class="txt" id="cfg_code" placeholder="CRS-XXXXXX" style="width:120px">
-      <button class="btn" onclick="loadConfigCode()">Load</button>
+      <button class="btn accent" onclick="saveConfig()">💾 Save on this PC</button>
+      <button class="btn" onclick="shareConfig()">🔗 Get share code</button>
     </div>
-    <div class="hint">Every save gets a unique random code. Click a code to copy
-      it — share it or type it on another setup to load that exact config.</div>
+    <div id="shareWrap" style="display:none;margin:10px 0">
+      <div class="hint" style="margin:0 0 6px">Send this to anyone — it carries
+        your whole setup inside it. They paste it into the box below.</div>
+      <textarea id="shareOut" class="sharebox" readonly
+        onclick="this.select()"></textarea>
+      <div class="btns" style="margin-top:8px">
+        <button class="btn accent" onclick="copyShare()">📋 Copy</button>
+        <button class="btn" onclick="$('#shareWrap').style.display='none'">Close</button>
+        <span class="lbl" id="shareLen"></span>
+      </div>
+    </div>
+    <div class="fields" style="margin-top:10px">
+      <span class="lbl">Load a code</span>
+      <input class="txt" id="cfg_code" placeholder="CRS-XXXXXX or a share code"
+        style="flex:1;min-width:180px;width:auto">
+      <button class="btn accent" onclick="loadConfigCode()">Load</button>
+    </div>
+    <div class="hint">Two kinds of code, and this box takes either. <b>Save on
+      this PC</b> keeps a setup here under a short code like
+      <span class="kbd">CRS-7KQ2XN</span>. <b>Get share code</b> makes a long
+      code that <i>contains</i> the settings, so you can send it to someone else
+      and they get your exact setup — no account, no internet, nothing to
+      install. Anything you load from a share code is saved here too.</div>
     <div class="cfg-list" id="cfgList"></div>
   </div>
 
@@ -975,9 +1000,36 @@ function quit(){act('quit');flash('quitting — you can close this tab');}
 function saveConfig(){act('save_config',{name:$('#cfg_name').value.trim()}).then(r=>{
   if(r&&r.code){flash('saved as '+r.code);$('#cfg_name').value='';load();}
   else flash('save failed');});}
+
+/* A share code carries the settings inside itself, so it works on someone
+   else's machine with nothing to set up. Long, but a paste is a paste. */
+function shareConfig(){
+  act('share_config',{name:$('#cfg_name').value.trim()}).then(r=>{
+    if(!r||!r.code){flash('could not build a share code');return;}
+    $('#shareWrap').style.display='';
+    $('#shareOut').value=r.code;
+    $('#shareLen').textContent=r.code.length+' characters';
+    $('#shareOut').select();
+    flash('share code ready — copy it and send it over');
+  });
+}
+function copyShare(){
+  const t=$('#shareOut'); t.select();
+  (navigator.clipboard?navigator.clipboard.writeText(t.value):Promise.reject())
+    .then(()=>flash('share code copied'),
+          ()=>{try{document.execCommand('copy');flash('share code copied');}
+               catch(e){flash('press Ctrl+C to copy');}});
+}
 function loadConfigCode(){const c=$('#cfg_code').value.trim();if(!c)return;
   act('load_config',{code:c}).then(r=>{
-    flash(r&&r.ok?('config '+c.toUpperCase()+' loaded'):'code not found');load();});}
+    if(r&&r.ok&&r.shared)
+      flash('loaded '+(r.name?('“'+r.name+'”'):'a shared setup')
+            +' — saved here as '+r.code);
+    else if(r&&r.ok) flash('config '+c.toUpperCase()+' loaded');
+    else if(r&&r.shared) flash('that share code is damaged — copy it again, '
+                               +'it may have been cut short');
+    else flash('code not found');
+    $('#cfg_code').value='';load();});}
 function loadCfg(code){act('load_config',{code}).then(r=>{
   flash(r&&r.ok?('config '+code+' loaded'):'load failed');load();});}
 function delCfg(code){act('delete_config',{code}).then(()=>{flash(code+' deleted');load();});}
@@ -1045,10 +1097,12 @@ function render(){
   const sh=$('#scanHint');
   if(sh) sh.innerHTML = want>0
     ? `Target <b>${want}/s</b> (manual) · achieving <b>${got}/s</b>. `+
-      `Your display refreshes at <b>${hz} Hz</b>`+
-      (want>hz?` — above that, scans re-read frames the screen hasn't redrawn yet.`:`.`)
-    : `<b>Auto</b>: matching your display's <b>${hz} Hz</b> · achieving `+
-      `<b>${got}/s</b>. Plug in a faster monitor and this follows it.`;
+      `Your display refreshes at <b>${hz} Hz</b>. Auto would use `+
+      `<b>${Math.round(hz*2)}/s</b> — set 0 to go back to that.`
+    : `<b>Auto</b>: <b>${Math.round(hz*2)}/s</b>, twice your display's `+
+      `<b>${hz} Hz</b> · achieving <b>${got}/s</b>. Checking twice per frame `+
+      `halves how stale a reading can be, which measurably cuts tracking lag — `+
+      `and it follows along if you plug in a faster monitor.`;
   const g=S.pointer_gain_measured, res=S.pointer_resolution||1;
   $('#gainNow').textContent=(g==null?'—':(g.toFixed(2)+'× per unit'));
   const pp=$('#ptrProfile');
@@ -1080,8 +1134,12 @@ function render(){
               : `<b>${cov}%</b> of the frame matches your colours.`);
   }
   const st=$('#statTarget');
-  st.textContent=S.target_found?'locked':'none';
-  st.className='v '+(S.target_found?'ok':'bad');
+  st.textContent=S.target_found?(S.target_holding?'holding':'locked'):'none';
+  st.className='v '+(S.target_found?(S.target_holding?'hold':'ok'):'bad');
+  st.title=S.target_holding
+    ?'Briefly aiming at where the target was last seen, waiting for it to be '
+     +'detected again.'
+    :'';
   $('#statMode').textContent=({dwell:'Dwell',trigger:'Trigger',off:'Manual'})[S.click_mode]||'—';
   const on=!!S.pull_enabled, p=$('#power'), hold=S.activation_mode==='hold';
   p.innerHTML=hold?(on?'HOLDING&nbsp;— ACTIVE':'HOLD&nbsp;'+esc(S.hotkey_hold||'?').toUpperCase())
@@ -1152,7 +1210,7 @@ const TIPS={
   sensitivity:"How fussy colour matching is. Raise it if your target isn't spotted; lower it if it grabs the wrong things. Watch the percentage below — if it climbs past about a quarter of the frame, it is matching too much to aim at.",
   min_contour_area:"Ignore colour patches smaller than this, so specks and noise don't get chased.",
   detect_scale:"Detection quality vs effort. Lower is lighter on the computer; higher spots smaller things.",
-  scan_fps:"How many times a second the screen is checked. Leave at 0 to match your monitor automatically — a screen can't show new pictures faster than its refresh rate, so scanning above it just sees the same picture twice. Set a number to cap it and free up the computer, or to go higher if you capture from OBS rather than the screen.",
+  scan_fps:"How many times a second the screen is checked. Leave at 0 and it uses twice your monitor's refresh rate, which reacts sooner because a reading is never more than half as old. Set a number to cap it and free up the computer, or to go higher still if you capture from OBS rather than the screen.",
   pull_radius:"The pointer is only guided toward colours inside this circle. Everything outside is ignored.",
   overlay_radius:"Just the size of the circle drawn on screen. Doesn't change behaviour.",
   snap_after_ms:"After resting on the colour this long, aim shifts to the thickest part of that target. Set 0 to do it straight away — better for things that keep moving.",
@@ -1200,6 +1258,14 @@ function attachTips(){
    Kept here so the panel is the single place a user looks; each entry says
    what changed in terms of what they would have noticed. */
 const NOTES=[
+ {v:"1.0.8",t:"Lock lag and lock spasms were the same bug · share codes",items:[
+   ["'Still a bit of latency' and 'lock breaks it' were one problem","When the target you were locked on wasn't spotted in a frame, the aim carried on pointing at where it used to be for nearly half a second before looking anywhere else. Measured, the pointer took 418ms to react to a target appearing somewhere new — against 10ms with lock switched off. On screen that looks like the aim freezing and then lurching across, which is both complaints at once. It now waits 0.06s when there's something else visible to aim at, and reaction time is 63ms."],
+   ["It no longer throws the pointer past a target that isn't moving","A figure that keeps breaking into pieces behind cover makes the detected point flip between two spots, which reads as a target sprinting at 900px/s. The aim was then thrown 23px past both places it was flipping between. It now checks whether the target is actually *going* somewhere before leading it. Peak pointer speed in that situation dropped from 3474px/s to 1973px/s — the same as with lock off."],
+   ["Turning lock off had switched off all smoothing","Every frame was being treated as a brand new target, so the smoothing, the deadband and the lead all reset constantly and the pointer rode raw detection. Both settings now behave the same in every test."],
+   ["Scanning faster now genuinely helps","It used to make tracking slightly worse, because most of the delay doesn't come from scanning and the compensation was tied to the scan rate. Auto now runs at twice your monitor's refresh — 120 a second on a 60Hz screen — and tracking lag drops rather than rises. It costs about 2% of one processor core."],
+   ["Share your setup with someone else","Configs used to be saved on your PC only, with a code that meant nothing anywhere else. 'Get share code' now gives you one string that contains your whole setup — paste it to a friend and they get exactly your settings. No account, no internet. A tuned setup is about 270 characters. If a chat app cuts the code short it says so rather than loading half a config."],
+   ["Status says 'holding' as well as 'locked'","So a pointer riding out a brief detection gap looks like what it is, instead of looking stuck."],
+ ]},
  {v:"1.0.7",t:"Snap fixed, any mouse sensitivity, drag-a-box area",items:[
    ["Best-coverage snap no longer ruins the aim","The snap circle was borrowing your field-of-view circle — 250px across by default — so it was answering 'where is this colour thickest' about half the screen instead of about your target. With two figures 220px apart it settled 47px off the one you were locked on, and at some spacings it aimed between the two, at neither. It now only looks inside the target it is already locked on, so it can never walk onto something else, and it has its own size setting that works itself out from the target by default."],
    ["Works the same on a fast mouse and a slow one","Windows shrinks or stretches every movement by your mouse-speed setting — from a thirty-second up to three and a half times — and 'enhance pointer precision' changes that again depending on how fast the pointer is already moving. It now reads those settings directly instead of guessing and correcting, so the very first movement is the right size. Wasted back-and-forth travel at the highest setting dropped from 96% down to 2%, and the shaking on arrival is gone at both ends."],

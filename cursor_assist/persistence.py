@@ -12,11 +12,13 @@ deleted by code.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
 import secrets
 import time
+import zlib
 from pathlib import Path
 from typing import List, Optional
 
@@ -113,12 +115,37 @@ def to_dict(state: AppState) -> dict:
         return data
 
 
+def _coerce(current, value):
+    """Cast an incoming value to the type of the field it is replacing.
+
+    Settings now arrive from other people's machines through share codes, so
+    "it came out of JSON" is no longer a good reason to trust it. A string
+    where a float belongs would otherwise be stored verbatim and blow up in the
+    detection loop, a thread away from anything that could explain why.
+    Anything that cannot be converted is rejected and the current value kept.
+    """
+    if isinstance(current, bool):
+        return bool(value)
+    if isinstance(current, int):
+        return int(value)
+    if isinstance(current, float):
+        return float(value)
+    if isinstance(current, str):
+        return str(value)[:120]
+    raise TypeError(type(current))
+
+
 def apply_dict(state: AppState, data: dict) -> None:
     """Apply a settings dict onto ``state`` (unknown/invalid values ignored)."""
     with state.lock:
         for name in _SCALAR_FIELDS:
-            if name in data:
-                setattr(state, name, data[name])
+            if name not in data:
+                continue
+            try:
+                setattr(state, name,
+                        _coerce(getattr(state, name), data[name]))
+            except (TypeError, ValueError, OverflowError):
+                continue
         # Guard the region against typos so the loop never gets a bad key.
         if state.active_region not in REGIONS:
             state.active_region = "Torso"
@@ -239,6 +266,78 @@ def load_config(state: AppState, code: str,
         return False
     apply_dict(state, data)
     return True
+
+
+# ------------------------------------------------------------- share codes
+# A saved config used to be a file on one machine and a six-character code that
+# only meant anything to the machine that wrote it — there was no way to hand a
+# setup to somebody else. A share code carries the whole configuration inside
+# itself instead, so it can be pasted into a chat window and used on any other
+# install, with no server, no account and no network access.
+#
+# Layout: ``CURSE1-`` + base64url( crc32(json) as 4 bytes || zlib(json) ).
+# The checksum is what makes a truncated paste — the usual failure, since these
+# are long enough for chat clients to wrap them — report itself as damaged
+# rather than load half a configuration.
+SHARE_PREFIX = "CURSE1-"
+SHARE_MAX_BYTES = 256 * 1024   # ceiling on what a paste may expand to
+
+
+def encode_share(state: AppState, name: str = "") -> str:
+    """The whole current setup as one pasteable string.
+
+    Only settings that differ from the defaults are carried, so an ordinary
+    setup produces a code short enough to paste in a chat message rather than
+    one that has to be sent as a file.
+    """
+    data = to_dict(state)
+    base = to_dict(AppState())
+    diff = {k: v for k, v in data.items()
+            if k == "version" or base.get(k) != v}
+    if name:
+        diff["config_name"] = str(name)[:60]
+    raw = json.dumps(diff, separators=(",", ":"),
+                     sort_keys=True).encode("utf-8")
+    body = zlib.crc32(raw).to_bytes(4, "big") + zlib.compress(raw, 9)
+    return SHARE_PREFIX + base64.urlsafe_b64encode(body).decode().rstrip("=")
+
+
+def decode_share(code: str) -> Optional[dict]:
+    """Settings carried by a share code, or ``None`` if it isn't a valid one."""
+    text = "".join((code or "").split())
+    if not text.upper().startswith(SHARE_PREFIX):
+        return None
+    payload = text[len(SHARE_PREFIX):]
+    try:
+        raw = base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4))
+        if len(raw) < 5:
+            return None
+        want, blob = int.from_bytes(raw[:4], "big"), raw[4:]
+        # Bounded decompression: this is a string a stranger pasted in, and an
+        # unbounded one is a few hundred bytes that expands into all of memory.
+        js = zlib.decompressobj().decompress(blob, SHARE_MAX_BYTES)
+        if zlib.crc32(js) != want:
+            return None
+        data = json.loads(js.decode("utf-8"))
+    except (ValueError, zlib.error, UnicodeDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def apply_share(state: AppState, code: str) -> Optional[str]:
+    """Load a share code onto ``state``. Returns its name, or ``None``.
+
+    Defaults are laid down first, so importing reproduces the *sender's* setup
+    rather than mixing it with whatever the receiver already had — which is the
+    entire point of handing someone your config.
+    """
+    data = decode_share(code)
+    if data is None:
+        return None
+    full = to_dict(AppState())
+    full.update(data)
+    apply_dict(state, full)
+    return str(data.get("config_name", ""))[:60]
 
 
 def delete_config(code: str, base: Optional[Path] = None) -> bool:

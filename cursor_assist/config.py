@@ -282,6 +282,11 @@ class AppState:
     loop_fps: float = 0.0
     display_hz: float = 60.0         # detected refresh rate (read-only)
     last_target_found: bool = False
+    # True when the aim is riding the short grace after a detection miss rather
+    # than following a blob seen this frame. Surfaced because the two look
+    # identical from outside and feel very different: a pointer that has frozen
+    # on a remembered position is the thing users describe as lag.
+    target_holding: bool = False
     pointer_gain_measured: float = 1.0   # learned OS pointer gain (read-only)
     pointer_profile: str = ""            # e.g. "6/11 (1x) + enhance precision"
     pointer_resolution: float = 1.0      # px per device unit (read-only)

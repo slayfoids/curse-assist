@@ -20,17 +20,32 @@ def rate(c, pulling=True):
     return 1.0 / c._scan_period(pulling)
 
 
-def test_zero_means_match_the_display():
-    """0 must follow the detected refresh, not a hardcoded number.
+def test_zero_follows_the_detected_display_rate():
+    """0 must track the detected refresh, not a hardcoded number.
 
-    A screen produces new content at its refresh rate and no faster, so this
-    is the rate above which extra scans re-read unchanged frames. It differs
-    per machine, which is exactly why it can't be a constant.
+    It differs per machine, which is exactly why it cannot be a constant.
     """
     c, st = make(scan_fps=0)
     for hz in (60.0, 120.0, 165.0, 240.0):
         c._display_hz = hz
-        assert rate(c) == pytest.approx(hz)
+        assert rate(c) == pytest.approx(hz * ctrl.AUTO_SCAN_MULT)
+
+
+def test_auto_scans_faster_than_the_refresh_rate():
+    """Auto deliberately oversamples the display, and here is why.
+
+    Matching the refresh exactly looks right — a screen shows no more than one
+    new picture per refresh — but that reasoning is about information, not
+    latency. A scan lands at an arbitrary point inside the refresh interval, so
+    sampling at exactly the refresh rate leaves half a frame of staleness on
+    average. Sampling twice as often halves it: measured against a 500 px/s
+    target, tracking lag fell from 12.2 px to 10.8 px, and at 900 px/s from
+    14.5 px to 7.6 px.
+    """
+    c, st = make(scan_fps=0)
+    c._display_hz = 60.0
+    assert rate(c) > 60.0
+    assert ctrl.AUTO_SCAN_MULT >= 2.0
 
 
 def test_explicit_rate_overrides_the_display():
@@ -61,6 +76,20 @@ def test_idle_uses_its_own_slower_rate():
     c._display_hz = 240.0
     assert rate(c, pulling=True) == pytest.approx(240.0)
     assert rate(c, pulling=False) == pytest.approx(12.0)
+
+
+def test_faster_scanning_does_not_make_tracking_worse():
+    """Raising the scan rate must not remove lead the pointer still needs.
+
+    Most of the pipeline lag is fixed — smoothing and easing take the same time
+    however often the screen is scanned — so a lead weighted almost entirely on
+    the detection interval shrank as the rate rose and left tracking *worse* at
+    240 scans/s than at 60. The fixed term has to dominate.
+    """
+    from cursor_assist import targeting as tg
+    slow = tg.LEAD_BASE + tg.LEAD_FRAMES / 60.0
+    fast = tg.LEAD_BASE + tg.LEAD_FRAMES / 240.0
+    assert fast >= 0.75 * slow, (slow, fast)
 
 
 def test_display_refresh_detection_returns_something_usable():

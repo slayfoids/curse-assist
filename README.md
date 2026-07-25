@@ -52,8 +52,10 @@ pointer on things they want to interact with on their own screen.*
   1/32× and at 3.5×, without a wrong-sized first move at either end.
 - 🖲️ **Flexible clicking** — dwell auto-click, instant trigger key/button,
   repeat auto-fire, or fully manual.
-- 💾 **Saved configs** — snapshot your whole setup under a unique code like
-  `CRS-7KQ2XN`; load it back anywhere.
+- 💾 **Saved configs & share codes** — keep setups on this PC under a short
+  code like `CRS-7KQ2XN`, or generate a **share code** that carries the whole
+  configuration inside it, so you can paste it to someone else and they get
+  your exact setup. No account, no server, no internet.
 - 🫨 **Tremor steadying** — optionally damp physical mouse input while the
   assist is moving so a shaky hand doesn't fight it.
 - 🧪 **Proven accuracy** — live-motion simulation suite; ≤2.5 px mean static
@@ -263,14 +265,15 @@ within which the tool offers guidance.
 | **Sensitivity** | How closely a pixel must match the chosen color (higher = matches a wider range). Widens the range of *hues* accepted while keeping the color distinct from grey and from black, so the whole slider stays usable — the panel shows what percentage of the frame your colors match, and anything past about a quarter is too much to aim at. |
 | **Min area** | Ignores colored specks smaller than this (px²). |
 | **Detect thin outlines** | Detect colored *outlines*, not just filled color. |
-| **Lock onto one target** | Pick a single color blob and keep guiding toward *it* until it disappears (plus a short grace), then re-acquire. With several same-color targets on screen this prevents the pointer from drifting to the middle of the group or twitching between them. |
+| **Lock onto one target** | Pick a single color blob and keep guiding toward *it* until it disappears (plus a short grace), then re-acquire. With several same-color targets on screen this prevents the pointer from drifting to the middle of the group or twitching between them. The grace adapts to what is on screen — barely longer than a frame when other candidates are visible — so the aim never sits on a remembered position while a real target is in view. |
 | **Best-coverage snap** | After the pointer has rested on the color for the set time (default 1 s), aim is refined to the spot where the snap circle covers the *most* target color. The search is confined to the locked blob, so this refines the aim **inside the current target** and can never move it onto a neighbouring one. |
 | **Snap circle** | Radius of that coverage circle, in px. **0 (default) sizes it from the target itself** — about a third of its narrow side — which is right because the useful size is a property of the target, not of your setup. |
 | **Snap after (ms)** | How long the pointer must sit on the color before the best-coverage snap engages (0–3000 ms). **Set it to 0 for an instant snap:** the timed path only starts its clock once the pointer is *resting on* the color, which a moving target never allows — so 0 skips that gate entirely and refines aim from the first frame. |
 | **Body-part detection** | Off (default) = guide to the color directly. On = aid a body region of a drawn figure. |
 | **Target region** | When body-part detection is on, which region (Head/Torso/Arms/Legs/Feet) to aid. Bands adapt to the figure's pose (standing / crouching / prone). |
 | **Part attraction** | How strongly the aim is drawn to the chosen part: 1.00 = exactly at the part, lower blends toward the figure's center of mass for steadiness. |
-| **Saved configs** | Snapshot the entire current setup under a unique random code (e.g. `CRS-7KQ2XN`). List, load, or delete saved configs; click a code to copy it, or type a code to load it on another setup. |
+| **Saved configs** | Snapshot the entire current setup under a unique random code (e.g. `CRS-7KQ2XN`), stored on this PC. List, load, or delete them; click a code to copy it. |
+| **Share codes** | **Get share code** produces a single string that *contains* your whole setup (about 270 characters for a fully tuned one), so it can be pasted into a chat message and loaded on anyone else's install — no account, server or internet. One box accepts either kind of code. Importing lays down defaults first so you get the sender's setup rather than a mixture with your own, a checksum rejects a code a chat client truncated instead of half-loading it, and anything imported is also saved locally. |
 | **Capture source** | Desktop screen (default) or an OBS virtual camera; monitor / region. |
 | **Detail (speed)** | Detection downscale — lower = faster, higher = more detail. |
 | **Detection area** | Restrict color detection to a box. **Select on screen** dims the desktop and takes a dragged rectangle, snipping-tool style, with a live size readout and Escape to cancel (multi-monitor aware). **Crop a screenshot** does the same over a frozen frame inside the panel. **Show the area on screen** outlines it on the desktop. Exact X/Y/W/H can still be typed; 0 0 0 0 = whole frame. |
@@ -375,7 +378,7 @@ mid-flight and throwing away the velocity the lead depends on.
 | `webserver.py` | Local HTTP server + JSON API for the web UI. |
 | `webpage.py` | The self-contained dark web control panel (HTML/CSS/JS). |
 | `gui.py` | Legacy Tkinter panel (`--tk`). |
-| `persistence.py` | Save/load all settings to JSON so they persist. |
+| `persistence.py` | Save/load settings to JSON, local config snapshots, and self-contained share codes. |
 
 ## Body-region heuristics
 
