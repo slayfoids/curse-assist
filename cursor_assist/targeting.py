@@ -47,9 +47,46 @@ LEAD_DEADZONE = 60.0
 LEAD_MAX = 140.0      # absolute cap (px) so a fast flick can't overshoot wildly
 LEAD_WARMUP = 6       # frames of continuous tracking before lead kicks in
 
+# --- Adaptive smoothing (one-euro) ------------------------------------------
+# Jitter and lag pull in opposite directions: smoothing hard kills detection
+# noise on a resting target but drags behind a moving one, and a single fixed
+# blend has to pick one of those to be bad at. The one-euro filter (Casiez et
+# al. 2012) varies its cutoff with the target's own speed, so a still target is
+# filtered heavily and a fast one is barely filtered at all.
+#
+# It is also derived from *elapsed time* rather than applied once per frame.
+# The old fixed per-frame blend was frame-rate dependent: identical settings
+# smoothed roughly twice as hard at 30 fps as at 60, so the feel drifted with
+# whatever the capture source and CPU were doing.
+MIN_CUTOFF_BASE = 0.8    # Hz at steadiness 0 — very calm when still
+MIN_CUTOFF_SPAN = 4.5    # extra Hz at steadiness 1
+CUTOFF_BETA = 0.013      # Hz gained per px/s of target speed
+VEL_CUTOFF_HZ = 6.0      # cutoff of the velocity estimator itself
+
 # Stability guards.
-TELEPORT_SPEED = 3000.0  # px/s; faster raw jumps are treated as a new target
+#
+# A raw jump can mean two very different things: a genuinely fast target, or a
+# blob re-identification error / scene cut. Speed alone can't tell them apart —
+# judging on speed alone made a target crossing the screen quickly look like a
+# teleport, and tracking reset itself mid-flight, every frame. So a jump only
+# counts as a teleport if it is *also* somewhere the current velocity did not
+# predict: real motion stays consistent with its own velocity, a re-id error
+# lands somewhere unrelated.
+TELEPORT_SPEED = 3000.0       # px/s; above this a jump becomes suspicious...
+TELEPORT_RESIDUAL_PX = 160.0  # ...and a teleport only if it also misses the
+                              # velocity-predicted position by this much
+TELEPORT_HARD_PX = 400.0      # a single-frame jump this big is always a cut
 DEADBAND_PX = 2.0        # ignore raw wiggle below this on a static target
+
+
+def _alpha(dt: float, cutoff_hz: float) -> float:
+    """One-euro blend factor for an elapsed time and a cutoff frequency.
+
+    Because it is built from ``dt``, the resulting smoothing is the same at any
+    frame rate — the thing the old fixed-alpha blend got wrong.
+    """
+    tau = 1.0 / (2.0 * math.pi * max(cutoff_hz, 1e-3))
+    return 1.0 / (1.0 + tau / max(dt, 1e-6))
 
 # Target lock.
 LOCK_MATCH_MIN = 70.0    # screen px; base radius for re-identifying the lock
@@ -390,16 +427,26 @@ class TargetTracker:
         dt = now - self._prev_t
         if dt > 1e-3:
             inst = (raw - self._prev_raw) / dt
-            if float(np.hypot(inst[0], inst[1])) > TELEPORT_SPEED:
-                # Physically impossible jump (blob re-id error, scene cut):
-                # restart tracking there instead of poisoning the velocity.
+            jump = float(np.hypot(raw[0] - self._prev_raw[0],
+                                  raw[1] - self._prev_raw[1]))
+            predicted = self._prev_raw + self._vel * dt
+            residual = float(np.hypot(raw[0] - predicted[0],
+                                      raw[1] - predicted[1]))
+            if (jump > TELEPORT_HARD_PX
+                    or (jump / dt > TELEPORT_SPEED
+                        and residual > TELEPORT_RESIDUAL_PX)):
+                # Discontinuity (blob re-id error, scene cut): restart tracking
+                # there instead of poisoning the velocity.
                 self._vel = np.zeros(2)
                 self._smoothed = raw.copy()
                 self._track_frames = 0
             else:
-                # Heavy velocity smoothing: keeps prediction stable at low fps
-                # (noisy per-frame deltas won't cause overshoot spikes).
-                self._vel = 0.85 * self._vel + 0.15 * inst
+                # Time-based velocity estimate. The old fixed 0.85/0.15 blend
+                # was a ~100 ms lag at 60 fps, which is a third of a cycle for
+                # a target juking twice a second — so the lead it fed pointed
+                # at where the target *had* been, and flung the pointer the
+                # wrong way on every direction change.
+                self._vel += _alpha(dt, VEL_CUTOFF_HZ) * (inst - self._vel)
             if dt < 0.5:  # ignore long stalls when estimating the interval
                 self._dt = 0.8 * self._dt + 0.2 * dt
         self._prev_raw = raw
@@ -417,17 +464,21 @@ class TargetTracker:
             return (int(round(self._smoothed[0])),
                     int(round(self._smoothed[1])))
 
-        # Adaptive follow: track a moving target a bit faster (less position
-        # lag), but stay gentle when static so aim is rock-steady and precise.
-        ema_eff = self._ema
-        if speed > 250:
-            ema_eff = min(0.65, self._ema + 0.18)
-        elif speed > 80:
-            ema_eff = min(0.6, self._ema + 0.1)
-        self._smoothed = ema_eff * raw + (1.0 - ema_eff) * self._smoothed
+        # One-euro follow: the cutoff rises with target speed, so a resting
+        # target is smoothed hard (steady, precise) and a fast one is followed
+        # almost immediately (little lag) — without the caller choosing.
+        dt_f = dt if dt > 1e-3 else self._dt
+        cutoff = (MIN_CUTOFF_BASE + self._ema * MIN_CUTOFF_SPAN
+                  + CUTOFF_BETA * speed)
+        self._smoothed = self._smoothed + _alpha(dt_f, cutoff) * (
+            raw - self._smoothed)
 
         # Lead the target when it's really moving — and only after the velocity
         # estimate has warmed up on this target, so a fresh lock never flings.
+        # Unchanged in strength: the wrong-way lead that used to fling the
+        # pointer on a direction change came from the stale velocity feeding
+        # it, which is fixed above, not from the lead being too large. Gating
+        # it on heading consistency was measured and made every case worse.
         out = self._smoothed
         if speed > LEAD_DEADZONE and self._track_frames >= LEAD_WARMUP:
             lead_time = min(LEAD_MAX_S,

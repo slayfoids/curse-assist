@@ -171,5 +171,65 @@ def test_instant_snap_bypasses_the_dwell_gate():
     assert 90 < out[0] < 130 and 90 < out[1] < 130
 
 
+# ------------------------------------------------------- motion / lag guards
+
+def _travel(tracker, speed, hz, steps, y=300.0):
+    """Feed a constant-speed horizontal target at a fixed sample rate."""
+    dt = 1.0 / hz
+    x = 100.0
+    for i in range(steps):
+        x = 100.0 + speed * (i * dt)
+        tracker._smooth(np.array([x, y]), i * dt, switched=(i == 0))
+    return x
+
+
+def test_smoothing_is_frame_rate_independent():
+    """Identical motion at different sample rates must smooth the same.
+
+    The old fixed per-frame blend applied its coefficient once per detection
+    frame, so it smoothed about twice as hard at 30 fps as at 60 — the same
+    settings drifted in feel with whatever the capture source and CPU were
+    doing. The time-based filter derives its coefficient from real elapsed
+    time, so the steady-state lag is a property of the settings alone.
+    """
+    lags = []
+    for hz in (30.0, 120.0):
+        t = TargetTracker(ema=0.45)
+        x = _travel(t, 600.0, hz, int(hz * 0.8))
+        lags.append(x - t._smoothed[0])       # steady-state position lag
+    slow, fast = lags
+    assert slow > 0 and fast > 0              # both genuinely trail the target
+    assert abs(slow - fast) <= 0.25 * max(slow, fast)
+
+
+def test_fast_continuous_motion_is_not_treated_as_a_teleport():
+    """A target crossing faster than TELEPORT_SPEED must keep its track.
+
+    Judging a teleport on speed alone reset tracking on every frame of a
+    genuinely fast target, which threw away the velocity estimate the lead
+    depends on and made fast motion jerky.
+    """
+    t = TargetTracker(ema=0.45)
+    speed = 4000.0                            # well above TELEPORT_SPEED
+    assert speed > targeting.TELEPORT_SPEED
+    _travel(t, speed, 60.0, 12)
+    assert t._track_frames >= 8               # never reset mid-flight
+    assert t.speed() > 2000.0                 # velocity estimate survived
+
+
+def test_unpredicted_jump_still_resets_tracking():
+    """The guard must still fire for a real discontinuity."""
+    t = TargetTracker(ema=0.45)
+    _travel(t, 600.0, 60.0, 8)
+    assert t._track_frames >= 6
+    # Blob re-identified somewhere the velocity never pointed.
+    t._smooth(np.array([900.0, 700.0]), 8 / 60.0, switched=False)
+    # Track restarted (the counter takes its unconditional +1 for this frame,
+    # so it lands at 1, well under LEAD_WARMUP) and velocity was discarded.
+    assert t._track_frames <= 1
+    assert t.speed() == 0.0
+    assert tuple(t._smoothed) == (900.0, 700.0)
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

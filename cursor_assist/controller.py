@@ -34,6 +34,15 @@ DETECT_MAX_HZ = 240.0      # cap; real detection fps is limited by the source/CP
 DETECT_MIN_DT = 1.0 / DETECT_MAX_HZ
 TARGET_STALE_S = 0.25      # ignore targets older than this
 
+# Pursuit easing. Below the knee the easing constant is untouched, so a resting
+# or slow target keeps the full smooth, precise feel. Above it the constant
+# decays continuously with speed so the pointer doesn't trail a moving object.
+# The previous curve bottomed out at 0.35 of the base constant, which still
+# left tens of px of lag on anything crossing the screen quickly.
+PURSUIT_KNEE = 80.0        # px/s at which shortening begins
+PURSUIT_SCALE = 500.0      # px/s of extra speed per halving of the constant
+PURSUIT_FLOOR = 0.14       # never shorten below this fraction of the base
+
 
 class AssistController:
     def __init__(self, state: AppState, on_dwell_start: Optional[Callable] = None,
@@ -250,8 +259,9 @@ class AssistController:
             # Adaptive: follow snappier while the target is moving (cuts pursuit
             # lag) without touching the smooth, precise feel on a static target.
             sp = self._target_speed
-            if sp > 80.0:
-                tau *= max(0.35, 1.0 - min(0.65, (sp - 80.0) / 900.0))
+            if sp > PURSUIT_KNEE:
+                tau *= max(PURSUIT_FLOOR,
+                           1.0 / (1.0 + (sp - PURSUIT_KNEE) / PURSUIT_SCALE))
             cursor_pos = self._glider.step(
                 target_screen=target,
                 dt=dt,

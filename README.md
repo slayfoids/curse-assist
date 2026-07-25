@@ -230,7 +230,7 @@ within which the tool offers guidance.
 | **Audio cues** | Two high-pitched beeps when guidance activates, two low-pitched beeps when it deactivates — from any path (hotkey, hold button, panel). Can be turned off. |
 | **Smoothness** | 0 = responsive, 1 = long gentle glide. Motion is frame-rate independent. |
 | **Max speed** | Cap on how fast the pointer moves (px/sec, up to 100000). Higher = keeps up with a color that moves quickly. |
-| **Target steadiness** | Smooths out detection jitter so the pointer doesn't wobble. |
+| **Target steadiness** | Smooths out detection jitter so the pointer doesn't wobble. Adaptive: the filter eases off automatically as the target speeds up, so raising this steadies a resting target without adding lag to a moving one. |
 | **Click mode** | **Dwell** (click after resting on the target), **Key** (a chosen key issues the click), or **Off** (click manually). |
 | **Dwell time** | In dwell mode, how long to rest before a click is issued (50–1500 ms). |
 | **Click key/button** | In key mode, what issues the click: a keyboard key, or a mouse button (RMB / MMB / side buttons) via quick-pick buttons — no need to record. |
@@ -272,7 +272,7 @@ within which the tool offers guidance.
        ─▶ color mode: lock onto one blob, hold it until it's gone   (default)
        ─▶ body-part mode: split figure into regions, target the active one
        ─▶ (after resting on color) snap to the max-coverage circle position
-       ─▶ teleport guard + deadband ─▶ EMA smoothing ─▶ publishes target ─┐
+       ─▶ teleport guard + deadband ─▶ one-euro smoothing ─▶ publishes target ─┐
                                                           │  (shared target)
  MOVEMENT thread (~240 Hz, independent)                   ▼
    read latest target ─▶ time-based ease: new = cur + (target-cur)·α(dt)
@@ -290,11 +290,29 @@ removes detection jitter; the speed cap prevents any sudden jump.
 **Why it's stable:** the tracker **locks onto one blob** and re-identifies it
 each frame by position, so the choice of target can't flip-flop between several
 same-color blobs (the cause of mid-group drift and random spasms). A **teleport
-guard** treats impossibly fast target jumps as a new target — resetting velocity
+guard** treats discontinuous target jumps as a new target — resetting velocity
 and smoothing instead of feeding them into motion prediction — and prediction
 only engages after the velocity estimate has warmed up on a target. A small
 **deadband** ignores sub-pixel detection wiggle so a still target is rock
 steady.
+
+**How steadiness works:** jitter and lag pull in opposite directions — smoothing
+hard kills detection noise on a resting target but drags behind a moving one,
+and a single fixed blend has to be bad at one of them. The target is filtered
+with a **one-euro filter** (Casiez et al.), whose cutoff rises with the target's
+own measured speed: a still target is filtered heavily and precisely, a fast one
+is followed almost immediately. Because the coefficient is derived from real
+elapsed time rather than applied once per frame, the same **Target steadiness**
+setting behaves identically at 30 fps and 120 fps.
+
+Two things feed it. The **velocity estimate** is itself low-passed (`VEL_CUTOFF_HZ`)
+— it drives both the adaptive cutoff and the motion lead, so its lag is the
+system's lag; it is deliberately fast. And the **teleport guard** judges a jump
+by whether it lands where the current velocity predicted, not by raw speed: a
+genuinely fast target stays consistent with its own velocity, while a blob
+re-identification error lands somewhere unrelated. Judging on speed alone made
+anything crossing the screen quickly look like a teleport, resetting the track
+mid-flight and throwing away the velocity the lead depends on.
 
 ### Modules
 
@@ -304,7 +322,7 @@ steady.
 | `capture.py` | `mss` screen capture and OBS virtual-camera capture. |
 | `detection.py` | HSV masking (multi-color), contour finding, shape classification. |
 | `segmentation.py` | Split a figure's bounding box into named body regions. |
-| `targeting.py` | Target lock, best-coverage snap, teleport guard, EMA + lead (downscale-aware). |
+| `targeting.py` | Target lock, best-coverage snap, teleport guard, one-euro smoothing + lead (downscale-aware). |
 | `cursor.py` | `SendInput` relative move + click; time-based ease; dwell machine. |
 | `mouse_block.py` | Optional low-level hook to steady the pointer against tremor. |
 | `overlay.py` | Transparent click-through assist-area circle overlay. |
@@ -362,13 +380,39 @@ gets to the color (stationary) and how well it follows a color that moves:
 py tools/aim_sim.py
 ```
 
-Current results — stationary final error **~1 px** (settles ~0.4 s), moving-color
-error **~2 px** on default settings. This harness is how the "doesn't fully reach
-the color" bug (an easing step that rounded sub-pixel moves to zero and stopped
-~13 px short) was found and fixed. Accuracy comes from a sub-pixel accumulator
-that lands exactly on the target, plus a small motion prediction that anticipates
-a moving color (disabled when the color is stationary, so it never costs
-precision).
+Current results — stationary final error **~1.7 px** (settles ~0.4 s), circling
+color **~11 px** on default settings. This harness is how the "doesn't fully
+reach the color" bug (an easing step that rounded sub-pixel moves to zero and
+stopped ~13 px short) was found and fixed. Accuracy comes from a sub-pixel
+accumulator that lands exactly on the target, plus a small motion prediction
+that anticipates a moving color (disabled when the color is stationary, so it
+never costs precision).
+
+### Strafe simulation (watchable)
+
+`tools/strafe_sim.py` is the same idea for the hard case: a target juking
+rapidly up and down, which is where tracking visibly falls apart. It renders the
+target, the pointer, the error between them and fading trails for both, so the
+failure is something you can watch rather than infer from a number.
+
+```bash
+py tools/strafe_sim.py --live                # watch it live
+py tools/strafe_sim.py --record strafe.mp4   # save a run
+py tools/strafe_sim.py --sweep               # error table across strafe speeds
+```
+
+It reports **signed** vertical error, so lag (pointer behind the target) is
+distinguishable from overshoot (pointer flung past it) — they look identical in
+a mean-absolute-error number and have opposite fixes.
+
+This is how two motion bugs were found. The velocity estimator used a fixed
+per-frame blend that worked out to a **~100 ms lag at 60 fps**; for a target
+reversing twice a second that is most of a half-cycle, so the lead it fed
+pointed where the target *had* been and threw the pointer the wrong way on
+every direction change. And the teleport guard fired on any jump above
+3000 px/s, which a fast strafe exceeds, resetting the track mid-flight. On a
+1 Hz strafe the pointer went from **29% to 69%** of the time on target, with
+peak error dropping from **74 px to 40 px**.
 
 ## License
 
