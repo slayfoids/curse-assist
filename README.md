@@ -109,6 +109,8 @@ Two things to expect on a fresh PC, both normal for any unsigned program:
 > **Setting it up for someone else?** [**INSTALL.md**](INSTALL.md) is the full
 > step-by-step, with nothing assumed.
 
+Version history is in [**CHANGELOG.md**](CHANGELOG.md); the panel's **Latest updates** card shows the same thing in plain language.
+
 ## Run from source
 
 Only needed to change the code. Requires Python 3.10+ (with Tkinter, which ships
