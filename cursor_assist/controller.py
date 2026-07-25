@@ -24,7 +24,7 @@ import cv2
 from . import cursor as cur
 from .capture import display_refresh_hz, make_capture
 from .config import AppState
-from .detection import find_shapes, largest_figure
+from .detection import find_shapes
 from .mouse_block import MouseSuppressor
 from .targeting import TargetTracker
 
@@ -343,13 +343,12 @@ class AssistController:
                 min_area = max(1, int(snap.min_contour_area * scale * scale))
                 shapes, mask = find_shapes(small, snap.colors,
                                            snap.detect_thin_border, min_area)
-                figure = largest_figure(shapes)
                 if mask.size:
                     self._state.set("mask_coverage", round(
                         100.0 * float(cv2.countNonZero(mask)) / mask.size, 1))
 
                 target = self._tracker.pick(
-                    shapes=shapes, figure=figure,
+                    shapes=shapes, figure=None,
                     active_region=snap.active_region,
                     cursor_screen=cur.get_cursor_pos(),
                     capture_origin=origin,

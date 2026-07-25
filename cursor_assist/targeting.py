@@ -94,9 +94,20 @@ STRAIGHT_FULL = 0.70      # at or above this, treat the motion as real travel
 # redecorating it twenty times a second.
 COMMIT_TAU_HOLD = 0.90    # s; how slowly the aim drifts inside the zone
 COMMIT_TAU_FOLLOW = 0.025  # s; how quickly it follows once the zone is left
-# Above this travel speed the target is genuinely going somewhere and the zone
-# is faded out entirely, so committing never costs tracking.
-COMMIT_FADE_SPEED = 240.0
+# Above this travel speed the commitment is applied across the direction of
+# travel only — see TargetTracker._commit.
+COMMIT_TRACK_SPEED = 60.0
+# ...but only once the target has also *got somewhere*, measured over a window
+# long enough to see an oscillation for what it is.
+#
+# Straightness alone is not enough here. It is measured over ten samples —
+# about 80 ms — and a figure whose limbs swing through a one-second cycle looks
+# perfectly straight over any 80 ms of it, so a standing figure registered as
+# travelling and its own swaying was passed through untouched. Requiring real
+# displacement over a window comparable to that cycle separates a figure
+# shifting its weight from one crossing the screen.
+COMMIT_TRAVEL_WINDOW_S = 0.45
+COMMIT_TRAVEL_MIN_MULT = 3.0   # x the commit zone
 
 # --- Adaptive smoothing (one-euro) ------------------------------------------
 # Jitter and lag pull in opposite directions: smoothing hard kills detection
@@ -161,6 +172,13 @@ LOCK_MATCH_MAX_MULT = 3.0  # hard ceiling on how far the match radius may open
 # longer than one frame.
 LOCK_GRACE_S = 0.18       # nothing else detected
 LOCK_GRACE_BUSY_S = 0.06  # other candidates are visible
+
+# Assembling a figure from its parts, for body-region aiming. A limb may sit a
+# fair fraction of the body away from the torso, but not several bodies away —
+# the gap between the two is what stops a bystander being absorbed.
+FIGURE_JOIN_FRAC = 0.6   # of the locked blob's larger side
+FIGURE_JOIN_MIN = 18     # px, screen space; a floor for small figures
+FIGURE_MIN_PX = 26       # below this, regions are meaningless: aim at the blob
 
 # Max-coverage snap.
 SNAP_OFF_GRACE_S = 0.30  # brief mask flicker doesn't reset the on-color timer
@@ -316,6 +334,9 @@ class TargetTracker:
         # Recent raw positions, for telling travel apart from vibration.
         self._recent: Deque[np.ndarray] = deque(maxlen=STRAIGHT_WINDOW)
         self._straight = 1.0
+        # Longer, time-based history of raw positions, for telling a target
+        # that is swaying on the spot from one that is going somewhere.
+        self._history: Deque[Tuple[float, float, float]] = deque()
         # Where the previous frame's pick landed, so "is this the same target"
         # can be answered when the lock is switched off too.
         self._last_pick: Optional[Tuple[float, float]] = None
@@ -405,6 +426,7 @@ class TargetTracker:
         self._last_pick = None
         self._committed = None
         self._recent.clear()
+        self._history.clear()
         self._straight = 1.0
         self._on_color_since = None
         self._off_color_at = None
@@ -413,7 +435,7 @@ class TargetTracker:
     def pick(
         self,
         shapes: List[DetectedShape],
-        figure: Optional[DetectedShape],
+        figure: Optional[DetectedShape],   # unused; see the note below
         active_region: str,
         cursor_screen: Tuple[int, int],
         capture_origin: Tuple[int, int],
@@ -434,8 +456,12 @@ class TargetTracker:
         * ``use_regions=False`` (default) — **track one color blob**: lock onto
           the blob nearest the cursor and keep pulling toward *that* blob until
           it disappears (plus a short grace), then re-acquire.
-        * ``use_regions=True`` — split the largest figure into body regions and
-          only target contour points inside the active region.
+        * ``use_regions=True`` — select and lock a target exactly as above,
+          then assemble the figure it belongs to and aim at one of its body
+          regions. ``figure`` is accepted for callers that still pass it and is
+          ignored: the figure is now derived from the locked target rather than
+          being "whichever blob is largest", which is what let a second person
+          on screen steal the aim mid-frame.
 
         With ``snap_enabled``, once the cursor has sat on the target color for
         ``snap_after_ms``, the aim point becomes the center of the
@@ -482,14 +508,25 @@ class TargetTracker:
                 self.reset()
                 return None
         else:
-            self._lock_box = None      # region aiming does its own placement
-            self._lock_shape = None
-            target_det = self._pick_region(
-                shapes, figure, active_region, cx, cy, r_det, part_attraction)
+            # Body-part aiming runs the *same* selection as colour tracking
+            # first, and only then splits the chosen target into regions.
+            #
+            # It used to pick "the largest blob on screen" fresh every frame,
+            # with no lock and reporting switched=False whatever happened. With
+            # two figures in view, whichever was momentarily larger took the
+            # aim — and because the switch was never declared, the jump between
+            # them was fed to the velocity estimate as though the target had
+            # sprinted across the screen. Measured peak pointer speed:
+            # 4583 px/s, against 247 px/s for the same scene in colour mode.
+            target_det, switched = self._pick_color(
+                shapes, cx, cy, r_det, ox, oy, inv, scale, now, lock_enabled)
             if target_det is None:
                 self.reset()
                 return None
-            switched = False
+            part = self._pick_region(
+                shapes, active_region, cx, cy, part_attraction, scale)
+            if part is not None:
+                target_det = part
 
         # Max-coverage snap: after dwelling on the color, aim at the circle
         # position with the most color instead of the blob center.
@@ -644,20 +681,75 @@ class TargetTracker:
             return None
         return ((self._lock[0] - ox) * scale, (self._lock[1] - oy) * scale)
 
-    def _pick_region(self, shapes, figure, active_region, cx, cy, r_det,
-                     attraction=1.0):
-        if figure is None:
+    def _figure_parts(self, shapes, scale):
+        """The blobs that make up the locked figure, as one group.
+
+        A person is rarely one contour. Different colours were picked for the
+        head, the shirt and the legs; a strap or a dark belt cuts the outline
+        in two; part of the body is behind cover. Every one of those arrives as
+        several separate blobs, and treating only the biggest as "the figure"
+        aims at whichever piece happens to be largest this frame.
+
+        So blobs are gathered around the locked one by proximity, all of them
+        already matching the colours the user chose — nothing else can be in
+        the mask. Anything too far away to be part of the same body is left
+        out, which is what keeps a second figure standing nearby from being
+        absorbed into this one.
+        """
+        anchor = self._lock_shape
+        if anchor is None:
+            return None, None
+        ax, ay, aw, ah = anchor.bbox
+        # A limb may sit a good fraction of the body's size away from the torso
+        # but not several bodies away.
+        reach = max(FIGURE_JOIN_MIN * scale, FIGURE_JOIN_FRAC * max(aw, ah))
+        group = [anchor]
+        # Membership is tracked by identity. ``s in group`` compares dataclasses
+        # field by field, and these hold numpy contours — so it raises as soon
+        # as two shapes have different point counts, which is almost always.
+        seen = {id(anchor)}
+        box = [ax, ay, ax + aw, ay + ah]
+        # Two passes, so a limb attached to a limb still joins, without the
+        # cost or the runaway risk of full transitive clustering.
+        for _ in range(2):
+            for s in shapes:
+                if id(s) in seen:
+                    continue
+                sx, sy, sw, sh = s.bbox
+                gap_x = max(box[0] - (sx + sw), sx - box[2], 0)
+                gap_y = max(box[1] - (sy + sh), sy - box[3], 0)
+                if math.hypot(gap_x, gap_y) <= reach:
+                    group.append(s)
+                    seen.add(id(s))
+                    box = [min(box[0], sx), min(box[1], sy),
+                           max(box[2], sx + sw), max(box[3], sy + sh)]
+        bbox = (int(box[0]), int(box[1]),
+                int(box[2] - box[0]), int(box[3] - box[1]))
+        return group, bbox
+
+    def _pick_region(self, shapes, active_region, cx, cy, attraction, scale):
+        """Aim at one body region of the *locked* figure.
+
+        Returns ``None`` to fall back to the plain colour aim point, which is
+        what should happen when the figure is too small to divide sensibly —
+        a made-up "head" band across eight pixels is worse than aiming at the
+        thing itself.
+        """
+        group, bbox = self._figure_parts(shapes, scale)
+        if group is None or bbox is None:
             return None
-        fcx, fcy = figure.center
-        # Respect the FOV: ignore a figure whose center is out of range.
-        if r_det is not None:
-            if (fcx - cx) ** 2 + (fcy - cy) ** 2 > r_det * r_det:
-                return None
-        region_rect = segment_regions(figure.bbox).get(active_region)
+        if bbox[2] < FIGURE_MIN_PX * scale or bbox[3] < FIGURE_MIN_PX * scale:
+            return None
+        region_rect = segment_regions(bbox).get(active_region)
         if region_rect is None:
             return None
+
+        # Only this figure's own pixels count toward its regions. Scanning
+        # every shape on screen meant a neighbour overlapping the band pulled
+        # the aim toward itself — the aim would sit between two figures while
+        # claiming to be on one of their heads.
         candidates: List[np.ndarray] = []
-        for s in shapes:
+        for s in group:
             pts = contour_points_in_region(s.contour, region_rect)
             if len(pts):
                 candidates.append(pts)
@@ -672,8 +764,11 @@ class TargetTracker:
             # center of the region box so the pull still heads to that area.
             rx, ry, rw, rh = region_rect
             part = (rx + rw / 2.0, ry + rh / 2.0)
+
         # Attraction: 1 = aim exactly at the part; lower blends toward the
         # figure's center of mass for extra steadiness.
+        fcx = bbox[0] + bbox[2] / 2.0
+        fcy = bbox[1] + bbox[3] / 2.0
         a = max(0.0, min(1.0, attraction))
         return (a * part[0] + (1.0 - a) * fcx,
                 a * part[1] + (1.0 - a) * fcy)
@@ -728,6 +823,20 @@ class TargetTracker:
                 self._on_color_since = None
 
     # ----------------------------------------------------------- straightness
+    def _travelled(self) -> float:
+        """How far the target has actually got over the long window, in px."""
+        if len(self._history) < 2:
+            return 0.0
+        x0, y0 = self._history[0][1], self._history[0][2]
+        x1, y1 = self._history[-1][1], self._history[-1][2]
+        return float(math.hypot(x1 - x0, y1 - y0))
+
+    def _update_history(self, raw: np.ndarray, now: float) -> None:
+        self._history.append((now, float(raw[0]), float(raw[1])))
+        cutoff = now - COMMIT_TRAVEL_WINDOW_S
+        while len(self._history) > 2 and self._history[0][0] < cutoff:
+            self._history.popleft()
+
     def _update_straightness(self, raw: np.ndarray) -> None:
         """Net displacement over distance travelled, across a short window.
 
@@ -763,6 +872,8 @@ class TargetTracker:
             self._track_frames = 0
             self._recent.clear()
             self._recent.append(raw.copy())
+            self._history.clear()
+            self._update_history(raw, now)
             self._straight = 1.0
             self._committed = raw.copy()
             return int(round(raw[0])), int(round(raw[1]))
@@ -796,6 +907,7 @@ class TargetTracker:
         self._prev_t = now
         self._track_frames += 1
         self._update_straightness(raw)
+        self._update_history(raw, now)
 
         speed = self.speed()
         dt_f = dt if dt > 1e-3 else self._dt
@@ -852,16 +964,46 @@ class TargetTracker:
         follows at once.
         """
         zone = self._commit_px
-        if zone <= 0.0:
+        if zone <= 0.0 or self._committed is None:
             self._committed = candidate.copy()
             return candidate
-        # A target that is really travelling needs no help deciding.
-        fade = max(0.0, 1.0 - speed / COMMIT_FADE_SPEED)
-        zone *= fade
-        if self._committed is None or zone <= 0.0:
-            self._committed = candidate.copy()
-            return candidate
+
         err = candidate - self._committed
+        v = self._vel
+        vmag = float(np.hypot(v[0], v[1]))
+
+        # Split the correction along and across the direction of travel.
+        #
+        # Simply fading commitment out on a moving target — which is what this
+        # did — assumes detection noise goes away once something starts moving.
+        # It does not; if anything a moving figure detects worse. But the two
+        # directions are not alike: movement happens *along* the heading, while
+        # noise is scattered in every direction. So the along-track component is
+        # followed immediately, keeping tracking exact, and only the
+        # cross-track component — which for a target moving in a straight line
+        # is almost entirely noise — is held.
+        # ``speed`` is straightness-gated, so a target that is merely vibrating
+        # never counts as travelling; ``_travelled`` additionally requires that
+        # it has actually got somewhere over a window long enough to tell a
+        # sway from a journey. Both must hold to give up the all-round hold.
+        travelling = (speed > COMMIT_TRACK_SPEED
+                      and self._travelled() > COMMIT_TRAVEL_MIN_MULT * zone)
+        if travelling and vmag > 1e-6:
+            ux, uy = v[0] / vmag, v[1] / vmag
+            along = err[0] * ux + err[1] * uy
+            cross = err - np.array([along * ux, along * uy])
+            cmag = float(np.hypot(cross[0], cross[1]))
+            # Along-track is followed outright, not filtered. Filtering it
+            # would be a lag on exactly the component that is real movement,
+            # and it measured as one: tracking error at 700 px/s went from
+            # 5.4 px to 19.9 px with a 25 ms constant on this term.
+            tau_c = COMMIT_TAU_HOLD if cmag <= zone else COMMIT_TAU_FOLLOW
+            a_cross = _alpha(dt, 1.0 / (2.0 * math.pi * tau_c))
+            self._committed = (self._committed
+                               + np.array([along * ux, along * uy])
+                               + cross * a_cross)
+            return self._committed
+
         d = float(np.hypot(err[0], err[1]))
         tau = COMMIT_TAU_HOLD if d <= zone else COMMIT_TAU_FOLLOW
         self._committed = self._committed + err * _alpha(dt, 1.0 /

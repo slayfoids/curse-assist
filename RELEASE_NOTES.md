@@ -1,111 +1,103 @@
-# Curse v1.0.9
+# Curse v1.0.10
 
-**Keeps up with moving targets, the aim marker holds still, dwell clicks
-instantly — and every setting is typable with a recommended value.**
+**Body-part aiming rebuilt on the locked target, and two ways the pointer could
+be driven past the thing it was aiming at.**
 
-Download **`CursorAssist-v1.0.9.exe`** below. Single file, nothing to install —
+Download **`CursorAssist-v1.0.10.exe`** below. Single file, nothing to install —
 it carries its own Python, OpenCV and numpy. Windows 10/11, 64-bit.
 
 Your existing settings carry over.
 
 ---
 
-## 🏃 It no longer trails behind things that move
+## 🧍 Body-part aiming was on a completely separate path
 
-The pointer steered purely by *how far off it was*. Something steering that way
-physically cannot sit on a target moving at a constant speed — it settles
-wherever the error is big enough to generate exactly the speed needed to keep
-pace, which is a fixed distance behind.
+Everything fixed over the last three releases — the target lock, switch
+detection, straightness gating, aim lock-in, follow speed — lived in the colour
+tracking path. Body-part mode never went through any of it.
 
-That is why turning up **Max speed** and **Accel limit** never helped: those cap
-how fast it may *correct*, not how far behind it *settles*. No value of either
-changes the answer.
+Instead it took whichever colour blob was **largest that frame**, kept no lock,
+and never reported when it changed its mind. So with two people on screen the
+aim jumped to whoever was momentarily bigger — and because the switch was never
+declared, that jump was handed to the velocity estimate as though the target had
+sprinted across the screen:
 
-The movement loop now also drives the pointer at the target's own velocity
-(**Follow speed**), removing the error instead of trading against it:
-
-| target speed | lag before | lag now |
+| scene | colour mode | body-part mode |
 |---|---|---|
-| 200 px/s | 11.1 px | **8.6 px** |
-| 400 px/s | 9.4 px | **4.4 px** |
-| 700 px/s | 8.7 px | **5.4 px** |
-| noisy animating figure, 300 px/s | 9.7 px | **4.1 px** |
+| two figures, peak pointer speed — **before** | 247 px/s | **4583 px/s** |
+| two figures, peak pointer speed — **now** | 220 px/s | **229 px/s** |
 
-The old position-lead was doing a rough version of the same job, so it is cut
-back to cover only how stale a reading is by the time it is acted on. Left as
-it was, the two compensated for the same lag twice — 30 px of lag *and* 36 px
-of overshoot at 1000 px/s, against 8.9 / 13 once rebalanced.
+It now runs the *same* selection as colour tracking and only then splits the
+chosen target into regions, so it finally inherits the lot.
 
-Combined with the scan-rate work in 1.0.8, lag against a 500 px/s target is now
-**2.1 px at 240 scans/s**, from 12.3 px originally.
+**A person is rarely one blob.** Different colours for hair and shirt, a dark
+strap across the chest, part of the body behind cover — every one of those
+arrives as separate pieces, and aiming at the biggest piece means aiming at
+whichever one happens to win this frame. Nearby pieces are now assembled into
+one figure — all of them still only the colours you picked, since nothing else
+can be in the mask — with a distance limit so somebody standing nearby is not
+absorbed into them.
 
-## 🎯 The aim marker stops dancing
+**Regions only use that figure's own pixels.** The head / torso / leg bands used
+to gather contour points from *every* shape on screen, so a second person
+overlapping a band pulled the aim toward themselves. The aim would sit between
+two people while reporting it was on one of their heads.
 
-Every filter in the tool reacted to **how fast** the target was moving — and
-camera noise looks fast to all of them. On an animating figure with ragged
-edges the aim wandered **9 px and changed 20 times a second** while the figure
-stood perfectly still, and this is what that did to the existing settings:
+A target too small to divide sensibly now falls back to aiming at the target
+itself, instead of inventing a "head" band across eight pixels.
 
-| setting tried | aim wander |
-|---|---|
-| defaults | 9 px |
-| jitter floor 3.0 | 6 px |
-| target steadiness 0.05 | 5 px |
-| smoothness 0.90 | 6 px |
-| precision zone 120 / slowdown 0.1 | 6 px |
+## ↔️ The pointer can't be pushed past what it's aiming at
 
-None of them could fix it, because they were all adjusting the wrong variable.
+Two separate ways it could, both fixed:
 
-New **Aim lock-in** reacts to how far the point has *strayed* rather than how
-fast it is going — which is what actually separates noise from movement, since
-noise stays bounded and averages out while movement accumulates. Same scene:
-**9 px → 1 px of wander, 20 changes a second → 1**. It fades out entirely once a
-target is genuinely travelling, so it never costs you tracking.
+**Overshoot.** The catch-up push (proportional to how far off it is) and the
+keep-pace push (velocity feed-forward) are added together, and their sum can
+exceed the gap remaining. Overshooting puts the error on the *other* side, so
+the next tick drives back — that is an oscillation, and at a low smoothness
+setting there is almost nothing damping it. A step is now capped at the distance
+to the target, which makes overshoot arithmetically impossible and costs nothing
+during pursuit.
 
-## ✦ Dwell clicks: instant, and reliable
+**Standoff.** Worse and less obvious: feed-forward could push forward exactly as
+hard as the error pulled back, parking the pointer a fixed distance *ahead* of
+the target. With a wrong velocity estimate that measured **129 px past a
+stationary target** — and no single-step cap can prevent it, because every
+individual step is small and pointed the right way. Feed-forward now fades out
+as the pointer draws level, so it can only ever help it catch up.
 
-- **0 ms now means 0 ms.** The minimum was 50 ms, and even that waited an extra
-  frame. Set it to 0 and it clicks the moment the pointer arrives.
-- **Clicks that just never happened.** The click radius was a single threshold,
-  so the aim jitter above pushed the pointer in and out of it many times a
-  second, restarting the countdown each time. Leaving now takes a larger
-  excursion than arriving did, so a dwell rides out the wobble.
-- The panel shows the **live distance from pointer to target** next to your
-  radius, so a radius set too small to ever be satisfied is a number you can
-  see rather than "it just doesn't click sometimes". Range widened to 3–200 px.
+## 🎯 Aim lock-in now works on moving targets too
 
-## ⌨️ Type any setting, and see what it should be
+It used to switch off entirely above a travel speed, on the grounds that a
+deadband would add tracking lag. That assumes detection noise stops when a
+target starts moving. It does not — if anything a moving figure detects worse.
 
-- **Every slider has a number box.** Type an exact value, paste one in, or read
-  one off to send to someone. Out-of-range numbers are pulled back into range
-  rather than refused, invalid text is flagged as you type and reverts, and the
-  box always shows the value that actually landed.
-- **Every setting carries a recommended value** and a one-line reason, and
-  clicking it puts the setting back. After hunting through six sliders looking
-  for a fix, nothing on screen used to tell you which ones were fine to begin
-  with.
+But the two are not alike: movement happens **along** a heading, while noise is
+scattered in every direction. So the along-track correction is followed
+outright, keeping tracking exact, and only the cross-track part is held.
 
-## 🔊 Volume control for the cues
+Engaging that needs the target to have genuinely *got somewhere*, measured over
+a window long enough to tell a sway from a journey — straightness is judged over
+about 80 ms, and a figure whose limbs swing through a one-second cycle looks
+perfectly straight over any 80 ms of it. A standing figure was registering as
+travelling and having its own swaying passed straight through.
 
-`winsound.Beep` has no volume, so the cues were fixed at whatever Windows chose
-— startling on some machines. They are now synthesised as tones in memory,
-which makes volume simply a multiplier on the samples. There is a **Cue
-volume** slider and a **Test** button. Nothing is written to disk.
+## 📊 Where tracking stands now
 
-## 🔎 Also
+Against the version you first reported these on:
 
-- The **snap circle is sized from the target's thickness**, not its bounding
-  box. An L-shaped target 200 px across is made of 40 px bars; sizing from the
-  box gave a circle three times too big — big enough that every position scored
-  the same and the aim stayed in the empty inside corner. It now searches the
-  whole target too, which for a concave shape it previously never reached.
-- 195 automated tests, up from 179.
+| | before | now |
+|---|---|---|
+| lag behind a 200 px/s target | 11.1 px | **4.0 px** |
+| lag behind a 400 px/s target | 9.4 px | **5.3 px** |
+| lag behind a 700 px/s target | 8.7 px | **6.7 px** |
+| aim wander, still noisy figure | 9 px @ 20 changes/s | **1 px @ 1/s** |
+| body-part mode, two figures | 4583 px/s peak | **229 px/s** |
+
+207 automated tests, up from 195.
 
 ## Upgrading
 
-Replace the exe; settings carry over. Two new controls start switched on
-because they are the fixes above: **Aim lock-in** (10 px) and **Follow speed**
-(1.00), both under *Guidance → Fine tracking*. If you preferred the old feel,
-set them to 0.
+Replace the exe; settings carry over. Nothing needs changing — if you had turned
+**Body-part detection** off because it was unusable, it is worth another look.
 
 **Full detail:** [CHANGELOG.md](CHANGELOG.md)

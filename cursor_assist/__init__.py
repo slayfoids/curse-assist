@@ -7,4 +7,4 @@ interact with on-screen art more easily.
 
 # Single source of truth for the version. The PyInstaller spec parses this
 # file to name the built exe, so a release is stamped by editing it here only.
-__version__ = "1.0.9"
+__version__ = "1.0.10"

@@ -76,6 +76,10 @@ def click_left() -> None:
 
 import math
 
+# How far behind the target feed-forward is at full strength, fading to nothing
+# as the pointer draws level. See the note in CursorGlider.step.
+FF_FADE_PX = 3.0
+
 
 class CursorGlider:
     """Frame-rate-independent easing toward a target, with true convergence.
@@ -223,12 +227,52 @@ class CursorGlider:
         # never closed the gap. Matching the target's velocity removes the
         # error rather than trading against it, and the proportional term is
         # then left correcting only what feed-forward did not predict.
-        sx += target_vel[0] * dt
-        sy += target_vel[1] * dt
+        #
+        # It is only ever allowed to help the pointer *catch up*, never to
+        # carry it past. Once the pointer is level with the target along the
+        # direction of travel the term is faded out, so the two cannot reach a
+        # standoff with feed-forward pushing forward exactly as hard as the
+        # error pulls back. Without that fade they do: a wrong velocity
+        # estimate parked the pointer a long way *ahead* of a stationary
+        # target — measured at 129 px — and no single-step clamp can prevent
+        # it, because every individual step is small and pointed the right way.
+        vmag = math.hypot(target_vel[0], target_vel[1])
+        if vmag > 1e-6:
+            ahead = (rx * target_vel[0] + ry * target_vel[1]) / vmag
+            ff = max(0.0, min(1.0, ahead / FF_FADE_PX))
+            sx += target_vel[0] * dt * ff
+            sy += target_vel[1] * dt * ff
+
+        # Never travel past the target.
+        #
+        # The proportional term alone cannot overshoot, but it is no longer
+        # alone: feed-forward is added to it, and the two together can exceed
+        # the distance remaining. Overshooting puts the error on the other
+        # side, so the next tick drives back — which is an oscillation, and at
+        # a low smoothness setting (a short time constant, so nearly the whole
+        # error is taken every tick) there is almost nothing damping it. That
+        # is the shape of a "spasm".
+        #
+        # The bound is the distance itself: at most, land on the target. That
+        # costs nothing during honest pursuit — the target moves on during the
+        # tick, so the next one has a fresh gap to close, and the settled lag
+        # is under one tick of travel — while making overshoot arithmetically
+        # impossible.
+        #
+        # Allowing the extra tick of target travel on top looked more correct
+        # and was not: it let feed-forward push past the target *every* tick,
+        # so a wrong velocity estimate settled the pointer at a fixed distance
+        # ahead instead of behind. Measured against a stationary target with a
+        # 4000 px/s estimate on a short time constant, it sat 129 px past it.
+        step = math.hypot(sx, sy)
+        if step > dist > 0:
+            f = dist / step
+            sx *= f
+            sy *= f
+            step = dist
 
         # Cap by speed (px/sec) while preserving direction.
         max_step = max_speed_px_s * dt
-        step = math.hypot(sx, sy)
         if step > max_step and step > 0:
             f = max_step / step
             sx *= f

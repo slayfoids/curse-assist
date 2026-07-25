@@ -133,6 +133,73 @@ def test_commitment_off_by_zero():
     assert span_off > 4.0                     # unfiltered noise gets through
 
 
+def test_a_target_swaying_on_the_spot_is_not_treated_as_travelling():
+    """A figure shifting its weight is not a figure crossing the screen.
+
+    Straightness is measured over about 80 ms, and a one-second sway looks
+    perfectly straight over any 80 ms of it — so a standing figure registered
+    as travelling and had its own swaying passed straight through.
+    """
+    t = TargetTracker(ema=0.45)
+    t.set_commit_px(10)
+    now = 0.0
+    out = []
+    for i in range(150):                      # ~1.2 s of a 0.9 s sway cycle
+        now += 1 / 120.0
+        # Amplitude inside the commit zone: this is the scale of a figure
+        # breathing on the spot, not one going anywhere.
+        x = 500.0 + 7.0 * math.sin(2 * math.pi * now / 0.9)
+        y = 300.0 + 5.0 * math.sin(2 * math.pi * now / 0.55)
+        out.append(t._smooth(np.array([x, y]), now, switched=(i == 0)))
+    tail = out[len(out) // 2:]
+    span = max(math.hypot(a[0] - b[0], a[1] - b[1])
+               for a in tail for b in tail)
+    assert span < 6, span                     # held, not chased around
+
+
+def test_a_target_actually_crossing_the_screen_still_tracks():
+    """The counterpart: real travel must not be held back."""
+    t = TargetTracker(ema=0.45)
+    t.set_commit_px(10)
+    now = 0.0
+    last = None
+    for i in range(120):
+        now += 1 / 120.0
+        last = t._smooth(np.array([200.0 + 600.0 * now, 300.0]), now,
+                         switched=(i == 0))
+    assert abs(last[0] - (200.0 + 600.0 * now)) < 30, last
+
+
+# ------------------------------------------------------- overshoot clamp
+
+def test_the_pointer_never_travels_past_the_target():
+    """Feed-forward plus the proportional term can exceed the gap between them.
+
+    Overshooting puts the error on the other side, so the next tick drives
+    back — an oscillation, and at a short time constant there is almost
+    nothing damping it.
+    """
+    for tau in (0.03, 0.078, 0.25):
+        pos = [0.0, 0.0]
+        cur.get_cursor_pos = lambda: (int(round(pos[0])), int(round(pos[1])))
+        cur.move_relative = lambda dx, dy: (pos.__setitem__(0, pos[0] + dx),
+                                            pos.__setitem__(1, pos[1] + dy))
+        g = _glider()
+        worst = 0.0
+        for _ in range(400):
+            # A stationary target, but a velocity estimate claiming otherwise:
+            # the worst case for over-driving.
+            g.step((300, 0), 1 / 240.0, tau, 60000,
+                   target_vel=(4000.0, 0.0))
+            worst = max(worst, pos[0] - 300)
+        assert worst <= 6.0, (tau, worst)
+
+
+def test_the_clamp_does_not_slow_honest_pursuit():
+    """It must bound overshoot without capping the speed needed to keep up."""
+    assert _chase(800, follow=1.0) < 0.25 * _chase(800, follow=0.0)
+
+
 # ------------------------------------------------------------ dwell click
 
 def _dwell_run(monkeypatch, dwell_ms, radius, offsets, hz=240):

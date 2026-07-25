@@ -9,6 +9,60 @@ tell which build you are running.
 
 ---
 
+## v1.0.10
+
+**Body-part aiming rebuilt on the locked target, and two ways the pointer could
+be driven past what it was aiming at.**
+
+- **Body-part aiming went down a completely different path from everything
+  else, and it showed.** It took whichever blob was *largest* each frame, kept
+  no lock, and reported no switch — so with two people on screen the aim jumped
+  to whoever was momentarily bigger, and because the switch was never declared
+  the jump was fed to the velocity estimate as though the target had sprinted
+  across the screen. Measured peak pointer speed with two figures in view:
+  **4583 px/s, against 247 px/s for the same scene in colour mode**.
+  - It now runs the *same* selection as colour tracking and only then splits
+    the chosen target into regions, so it inherits the lock, the switch
+    detection, straightness gating, aim commitment and velocity follow — every
+    fix of the last three releases that it was quietly excluded from. Same
+    scene: **229 px/s**, matching colour mode.
+  - **A figure is assembled from its own parts.** A person is rarely one blob:
+    different colours for hair and shirt, a dark strap, part of the body behind
+    cover — all arrive as separate pieces, and taking the biggest aims at
+    whichever piece wins this frame. Nearby pieces are now grouped into one
+    figure, all of them matching the colours you picked, with a distance limit
+    so a bystander is not absorbed.
+  - **Only that figure's pixels count toward its regions.** Region bands used
+    to gather contour points from *every* shape on screen, so a neighbour
+    overlapping the band pulled the aim toward itself — the aim would sit
+    between two people while reporting it was on one of their heads.
+  - A target too small to divide sensibly falls back to aiming at the target
+    itself, rather than inventing a "head" band across eight pixels.
+- **The pointer can no longer be driven past what it is aiming at.** Two
+  separate ways it could:
+  - The proportional term and velocity feed-forward are added together, and
+    their sum can exceed the gap remaining. Overshooting puts the error on the
+    other side, so the next tick drives back — an oscillation, and at a low
+    smoothness setting there is almost nothing damping it. A step is now capped
+    at the distance to the target, which makes overshoot arithmetically
+    impossible and costs nothing during pursuit.
+  - Worse, feed-forward could reach a *standoff*: pushing forward exactly as
+    hard as the error pulled back, parking the pointer a fixed distance ahead.
+    With a wrong velocity estimate that measured **129 px past a stationary
+    target**, and no single-step cap can prevent it because every individual
+    step is small and pointed the right way. Feed-forward now fades out as the
+    pointer draws level, so it can only ever help it catch up.
+- **Aim commitment now works on a moving target too.** It used to switch off
+  entirely above a travel speed, on the grounds that a deadband would add
+  tracking lag — which assumes detection noise stops when a target starts
+  moving. It does not. Movement happens *along* a heading while noise is
+  scattered in every direction, so the along-track correction is followed
+  outright and only the cross-track part is held. Engaging that needs the
+  target to have genuinely *got somewhere* over a window long enough to tell a
+  sway from a journey: straightness is measured over about 80 ms, and a figure
+  whose limbs swing through a one-second cycle looks perfectly straight over
+  any 80 ms of it.
+
 ## v1.0.9
 
 **Stops trailing moving targets, stops the aim dancing, clicks instantly, and
