@@ -62,6 +62,13 @@ ADAPT_MISS_MAX = 3         # empty follow frames before falling back to full
 ADAPT_RESCAN_EVERY = 12    # force a full scan this often, to find new targets
 ADAPT_MAX_AREA_FRAC = 0.45  # skip the window if it isn't actually smaller
 
+# Search window used *before* anything is locked. Sized from the pull radius,
+# because selection already discards every target outside it — grabbing the
+# rest of the screen is work whose result is guaranteed to be thrown away.
+# The margin lets a blob straddling the edge still register.
+SEARCH_MARGIN = 1.3
+SEARCH_PAD = 48
+
 
 def _intersect(a, b):
     """Overlap of two (left, top, w, h) boxes, or None if they don't meet."""
@@ -227,6 +234,7 @@ class AssistController:
                 self._adapt_frames += 1
                 self._adapt_active = False
                 follow_box = None
+                search_box = None
                 # The user's detection area, in absolute desktop pixels. A
                 # backend that predates follow support has no base_origin;
                 # without a follow window the two are the same thing anyway.
@@ -237,27 +245,43 @@ class AssistController:
                     roi_abs = (base_ox + snap.roi_x, base_oy + snap.roi_y,
                                snap.roi_w, snap.roi_h)
 
+                # Both windows are intersected with the detection area here, in
+                # one shared coordinate space. Cropping again after the grab
+                # would apply the area's offset a second time, inside the
+                # window, and put the aim point somewhere else entirely.
                 if (snap.adaptive_roi and snap.lock_target
                         and self._adapt_at is not None
                         and self._adapt_miss < ADAPT_MISS_MAX
                         and self._adapt_frames % ADAPT_RESCAN_EVERY != 0):
+                    # Locked: follow the target, at full resolution.
                     half = int(max(ADAPT_MIN_HALF,
                                    self._tracker.speed() * ADAPT_SPEED_LEAD))
                     follow_box = (self._adapt_at[0] - half,
                                   self._adapt_at[1] - half,
                                   2 * half, 2 * half)
-                    # Intersect with the detection area here, in one shared
-                    # coordinate space. Cropping the follow window again after
-                    # the grab would apply the area's offset a second time,
-                    # inside the window, and put the aim point in the wrong
-                    # place entirely.
                     if roi_abs is not None:
                         follow_box = _intersect(follow_box, roi_abs)
                     self._adapt_active = follow_box is not None
+                elif snap.adaptive_roi and snap.pull_radius > 0:
+                    # Nothing locked yet: search a window around the pointer
+                    # rather than the whole screen. Not a heuristic — selection
+                    # already discards every target outside the pull radius, so
+                    # the rest of the screen was being grabbed and scanned only
+                    # for the result to be thrown away. That full grab is
+                    # ~67 ms, which is why acquisition sat near 10 scans a
+                    # second however high the scan rate was set.
+                    cx, cy = cur.get_cursor_pos()
+                    m = int(snap.pull_radius * SEARCH_MARGIN + SEARCH_PAD)
+                    search_box = (cx - m, cy - m, 2 * m, 2 * m)
+                    if roi_abs is not None:
+                        search_box = _intersect(search_box, roi_abs)
+
+                box = follow_box if self._adapt_active else search_box
                 try:
-                    capture.set_follow(follow_box)
+                    capture.set_follow(box)
                 except AttributeError:      # a backend without follow support
                     self._adapt_active = False
+                    box = None
 
                 frame = capture.grab()
                 if frame is None:
@@ -271,7 +295,7 @@ class AssistController:
                 # following — the follow window was already intersected with
                 # the area above, in absolute coordinates.
                 origin = capture.origin
-                if not self._adapt_active and roi_abs is not None:
+                if box is None and roi_abs is not None:
                     fh, fw = frame.shape[:2]
                     x0 = max(0, min(snap.roi_x, fw - 1))
                     y0 = max(0, min(snap.roi_y, fh - 1))

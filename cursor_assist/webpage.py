@@ -246,6 +246,17 @@ PAGE = r"""<!doctype html>
   .hk label{flex:0 0 108px;color:var(--muted);font-size:12px;
     overflow-wrap:break-word;hyphens:auto}
 
+
+  /* ---------- section tabs ---------------------------------------------- */
+  .tabs{grid-column:span 12;display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 2px}
+  .tabs button{appearance:none;cursor:pointer;font:600 12.5px/1 inherit;
+    color:var(--muted);background:var(--card);border:1px solid var(--edge);
+    padding:10px 16px;border-radius:12px;transition:.18s;letter-spacing:.02em}
+  .tabs button:hover{color:var(--fg);border-color:var(--edge2)}
+  .tabs button.sel{color:#fff;background:var(--accent);border-color:transparent;
+    box-shadow:0 6px 20px rgba(168,85,247,.35)}
+  .card[data-tab]{display:none}
+  .card[data-tab].show{display:block}
   /* ---------- plain-language info bubbles ------------------------------- */
   .i{display:inline-flex;align-items:center;justify-content:center;
     width:15px;height:15px;margin-left:6px;border-radius:50%;flex:0 0 15px;
@@ -383,11 +394,18 @@ PAGE = r"""<!doctype html>
       <div class="stat"><div class="k">Target</div><div class="v bad" id="statTarget">none</div></div>
       <div class="stat"><div class="k">Click mode</div><div class="v" id="statMode">—</div></div>
     </div>
+
+  <nav class="tabs" id="tabs" role="tablist">
+    <button data-t="guide"  role="tab">⚡ Guidance</button>
+    <button data-t="aim"    role="tab">⌖ Targeting</button>
+    <button data-t="click"  role="tab">✦ Clicking</button>
+    <button data-t="detect" role="tab">🎨 Detection</button>
+    <button data-t="setup"  role="tab">⌨ Setup</button>
+  </nav>
   </div>
 
-  <div class="section"><span class="tag">Guidance &amp; Motion</span><span class="rule"></span></div>
 
-  <div class="card s3" style="animation-delay:.05s"><h2><span class="ico">⚡</span>Activation</h2>
+  <div class="card s3" data-tab="guide" style="animation-delay:.05s"><h2><span class="ico">⚡</span>Activation</h2>
     <div class="seg" id="actmode">
       <button data-am="toggle">Toggle</button>
       <button data-am="hold">Hold</button>
@@ -411,7 +429,7 @@ PAGE = r"""<!doctype html>
     <div class="hint" id="actHint"></div>
   </div>
 
-  <div class="card s3" style="animation-delay:.06s"><h2><span class="ico">〜</span>Motion</h2>
+  <div class="card s3" data-tab="guide" style="animation-delay:.06s"><h2><span class="ico">〜</span>Motion</h2>
     <div class="row"><label>Smoothness</label>
       <input type="range" data-key="smoothness" min="0" max="1" step="0.05">
       <span class="val"></span></div>
@@ -425,7 +443,7 @@ PAGE = r"""<!doctype html>
       feel, not speed of detection.</div>
   </div>
 
-  <div class="card s3" style="animation-delay:.07s"><h2><span class="ico">◈</span>Fine tracking</h2>
+  <div class="card s3" data-tab="guide" style="animation-delay:.07s"><h2><span class="ico">◈</span>Fine tracking</h2>
     <div class="row"><label>Motion response</label>
       <input type="range" data-key="motion_response" min="0.2" max="3" step="0.1">
       <span class="val"></span></div>
@@ -453,7 +471,7 @@ PAGE = r"""<!doctype html>
     </div>
   </div>
 
-  <div class="card s3" style="animation-delay:.08s"><h2><span class="ico">🖱</span>Pointer calibration</h2>
+  <div class="card s3" data-tab="guide" style="animation-delay:.08s"><h2><span class="ico">🖱</span>Pointer calibration</h2>
     <div class="toggle"><span>Auto-calibrate<br><small>learn this PC's pointer speed</small></span>
       <label class="switch"><input type="checkbox" data-key="pointer_gain_auto">
       <span class="track"></span></label></div>
@@ -468,7 +486,7 @@ PAGE = r"""<!doctype html>
       only if it still under-reaches.</div>
   </div>
 
-  <div class="card s3" style="animation-delay:.09s"><h2><span class="ico">⌖</span>Targeting</h2>
+  <div class="card s3" data-tab="aim" style="animation-delay:.09s"><h2><span class="ico">⌖</span>Targeting</h2>
     <div class="toggle"><span>Lock onto one target<br><small>hold it until it's gone</small></span>
       <label class="switch"><input type="checkbox" data-key="lock_target">
       <span class="track"></span></label></div>
@@ -487,7 +505,7 @@ PAGE = r"""<!doctype html>
       the pointer to rest on the color, which a moving target never lets it do.</div>
   </div>
 
-  <div class="card s3" style="animation-delay:.12s"><h2><span class="ico">◎</span>Field of view</h2>
+  <div class="card s3" data-tab="aim" style="animation-delay:.12s"><h2><span class="ico">◎</span>Field of view</h2>
     <div class="toggle"><span>Show crosshair circle</span>
       <label class="switch"><input type="checkbox" data-key="show_overlay">
       <span class="track"></span></label></div>
@@ -505,9 +523,8 @@ PAGE = r"""<!doctype html>
       pull radius); it also sets the best-coverage snap circle.</div>
   </div>
 
-  <div class="section"><span class="tag">Clicking</span><span class="rule"></span></div>
 
-  <div class="card s6" style="animation-delay:.15s"><h2><span class="ico">✦</span>Click</h2>
+  <div class="card s6" data-tab="click" style="animation-delay:.15s"><h2><span class="ico">✦</span>Click</h2>
     <div class="seg" id="clickmode">
       <button data-mode="dwell">Dwell</button>
       <button data-mode="trigger">Trigger key</button>
@@ -544,7 +561,7 @@ PAGE = r"""<!doctype html>
     <div class="hint" id="clickHint"></div>
   </div>
 
-  <div class="card s6" style="animation-delay:.18s"><h2><span class="ico">⛨</span>Input control</h2>
+  <div class="card s6" data-tab="click" style="animation-delay:.18s"><h2><span class="ico">⛨</span>Input control</h2>
     <div class="toggle"><span>Block my mouse while the bot is moving<br>
       <small>steadies a shaky hand so it doesn't fight the assist</small></span>
       <label class="switch"><input type="checkbox" data-key="suppress_mouse">
@@ -554,9 +571,8 @@ PAGE = r"""<!doctype html>
       by default) to take back full control instantly.</div>
   </div>
 
-  <div class="section"><span class="tag">Detection</span><span class="rule"></span></div>
 
-  <div class="card s4" style="animation-delay:.21s"><h2><span class="ico">🎨</span>Target colors</h2>
+  <div class="card s4" data-tab="detect" style="animation-delay:.21s"><h2><span class="ico">🎨</span>Target colors</h2>
     <div class="swatches" id="swatches"></div>
     <div class="btns" style="margin-bottom:12px">
       <input type="color" id="picker" style="width:0;height:0;opacity:0;position:absolute">
@@ -590,7 +606,7 @@ PAGE = r"""<!doctype html>
       target matches both ends of the hue circle.</div>
   </div>
 
-  <div class="card s4" style="animation-delay:.24s"><h2><span class="ico">☰</span>Body aim</h2>
+  <div class="card s4" data-tab="aim" style="animation-delay:.24s"><h2><span class="ico">☰</span>Body aim</h2>
     <div class="toggle"><span>Body-part detection<br><small>off = track the color directly</small></span>
       <label class="switch"><input type="checkbox" data-key="body_part_detection">
       <span class="track"></span></label></div>
@@ -604,7 +620,7 @@ PAGE = r"""<!doctype html>
       (standing / crouching / prone).</div>
   </div>
 
-  <div class="card s4" style="animation-delay:.27s"><h2><span class="ico">▣</span>Detection area</h2>
+  <div class="card s4" data-tab="detect" style="animation-delay:.27s"><h2><span class="ico">▣</span>Detection area</h2>
     <div class="hint" style="margin-bottom:6px">Only look for colors inside this
       pixel box. X / Y / W / H — 0&nbsp;0&nbsp;0&nbsp;0 = whole frame.</div>
     <div class="fields">
@@ -617,7 +633,7 @@ PAGE = r"""<!doctype html>
     </div>
   </div>
 
-  <div class="card s6" style="animation-delay:.3s"><h2><span class="ico">🖵</span>Capture source</h2>
+  <div class="card s6" data-tab="detect" style="animation-delay:.3s"><h2><span class="ico">🖵</span>Capture source</h2>
     <div class="seg" id="seg">
       <button data-src="screen">Screen (recommended)</button>
       <button data-src="obs">OBS virtual cam</button>
@@ -641,7 +657,7 @@ PAGE = r"""<!doctype html>
     <div class="hint" id="scanHint">—</div>
   </div>
 
-  <div class="card s6" style="animation-delay:.33s"><h2><span class="ico">⌨</span>Hotkeys</h2>
+  <div class="card s6" data-tab="setup" style="animation-delay:.33s"><h2><span class="ico">⌨</span>Hotkeys</h2>
     <div class="hk"><label>Show panel</label><input class="txt" id="hk_show" style="width:auto">
       <button class="btn" onclick="record('show')">Record</button></div>
     <div class="hk"><label>Toggle pull</label><input class="txt" id="hk_pull" style="width:auto">
@@ -653,9 +669,8 @@ PAGE = r"""<!doctype html>
       shows this panel, <span class="kbd">F8</span> toggles the pull.</div>
   </div>
 
-  <div class="section"><span class="tag">Saved configs</span><span class="rule"></span></div>
 
-  <div class="card s12" style="animation-delay:.36s"><h2><span class="ico">☷</span>Configs</h2>
+  <div class="card s12" data-tab="setup" style="animation-delay:.36s"><h2><span class="ico">☷</span>Configs</h2>
     <div class="fields">
       <input class="txt" id="cfg_name" placeholder="config name (optional)"
         style="flex:1;min-width:160px;width:auto">
@@ -669,7 +684,7 @@ PAGE = r"""<!doctype html>
     <div class="cfg-list" id="cfgList"></div>
   </div>
 
-  <div class="card s12" style="animation-delay:.38s"><h2><span class="ico">✧</span>Latest updates</h2>
+  <div class="card s12" data-tab="setup" style="animation-delay:.38s"><h2><span class="ico">✧</span>Latest updates</h2>
     <div id="notes"></div>
     <div class="hint">You're running <b><span id="verNote">—</span></b>. Newest
       changes first.</div>
@@ -854,7 +869,12 @@ function render(){
   // status
   $('#fps').textContent=(S.target_found?'● ':'')+(S.fps||0)+' fps';
   $('#dot').classList.toggle('live',!!S.target_found);
-  $('#statFps').textContent=(S.fps||0)+' fps';
+  // A low number while guidance is off is the deliberate idle tick, not a
+  // fault — saying so stops it reading as "detection is broken".
+  const _f=Math.round(S.fps||0);
+  $('#statFps').textContent = S.pull_enabled
+    ? _f+'/s'+(S.roi_following?' · following':'')
+    : _f+'/s · idle';
   if(S.version)$('#ver').textContent='v'+S.version;
   // Target vs achieved: the scan rate is a ceiling, not a promise — if a grab
   // takes longer than the target period the loop simply runs slower, and
@@ -964,6 +984,11 @@ function attachTips(){
    Kept here so the panel is the single place a user looks; each entry says
    what changed in terms of what they would have noticed. */
 const NOTES=[
+ {v:"1.0.6",t:"Five times faster searching, and a tidier panel",items:[
+   ["Much faster when looking for a target","Before locking on, it was grabbing the whole screen every time — about 67ms — so it only managed around 10 checks a second no matter what the scan rate said. It now only looks at the area around your pointer, since anything outside the circle is ignored anyway. Measured 10 → 52 checks a second."],
+   ["The 'Detection' number now says when it's idle","A low number with guidance switched off is the deliberate slow tick, not a fault. It now says 'idle' so it doesn't look broken."],
+   ["Tabs instead of one long wall","The panel had fourteen cards on screen at once. They're now grouped into Guidance, Targeting, Clicking, Detection and Setup, and it remembers which one you were on."],
+ ]},
  {v:"1.0.5",t:"Scan rate is now adjustable",items:[
    ["Set your own scan rate","A new Scan rate slider in Capture source. Leave it at 0 and it matches your monitor automatically — including 144Hz, 165Hz and 240Hz screens, and it follows along if you plug a different one in while it's running."],
    ["Why 0 is usually right","A screen only draws new pictures at its refresh rate, so checking more often than that just sees the same picture twice — cost with nothing gained. Set a number if you want to cap it and free up the computer, or to go higher when you capture from OBS instead of the screen, since OBS runs at its own rate."],
@@ -1002,6 +1027,32 @@ function renderNotes(){
     `</ul></div>`).join('');
 }
 
+/* ---- section tabs -------------------------------------------------------
+   Fourteen cards at once was too much to take in. Grouping them behind tabs
+   keeps the status header plus only the controls you're using on screen. The
+   choice is remembered, so reopening the panel puts you back where you were. */
+function showTab(name){
+  document.querySelectorAll('.card[data-tab]').forEach(c=>
+    c.classList.toggle('show', c.dataset.tab===name));
+  document.querySelectorAll('#tabs button').forEach(b=>{
+    const on=b.dataset.t===name;
+    b.classList.toggle('sel',on);
+    b.setAttribute('aria-selected',on?'true':'false');
+  });
+  try{localStorage.setItem('curse.tab',name);}catch(e){}
+}
+function initTabs(){
+  const tabs=document.getElementById('tabs');
+  if(!tabs||tabs.dataset.done)return;
+  tabs.dataset.done='1';
+  tabs.querySelectorAll('button').forEach(b=>
+    b.onclick=()=>showTab(b.dataset.t));
+  let want='guide';
+  try{const s=localStorage.getItem('curse.tab');
+      if(s&&tabs.querySelector('[data-t="'+s+'"]'))want=s;}catch(e){}
+  showTab(want);
+}
+
 function bootDone(){
   const b=document.getElementById('boot');
   if(!b||b.classList.contains('gone'))return;
@@ -1011,7 +1062,7 @@ function bootDone(){
 }
 
 async function load(){S=await fetch('/api/state').then(r=>r.json());fillStatic();render();
-  attachTips();renderNotes();
+  attachTips();renderNotes();initTabs();
   if(S.version)$('#verNote').textContent='v'+S.version;
   bootDone();}
 async function poll(){try{S=await fetch('/api/state').then(r=>r.json());
