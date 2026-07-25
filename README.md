@@ -4,8 +4,8 @@
 
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-a855f7?logo=windows&logoColor=white)](#install)
 [![Python](https://img.shields.io/badge/python-3.10%2B-7c3aed?logo=python&logoColor=white)](#install)
-[![Version](https://img.shields.io/badge/version-1.0.3-a855f7)](https://github.com/slayfoids/curse-assist/releases)
-[![Tests](https://img.shields.io/badge/tests-94%20passing-d946ef)](#testing)
+[![Version](https://img.shields.io/badge/version-1.0.4-a855f7)](https://github.com/slayfoids/curse-assist/releases)
+[![Tests](https://img.shields.io/badge/tests-96%20passing-d946ef)](#testing)
 [![Accuracy](https://img.shields.io/badge/static%20aim-%E2%89%A42.5px-c026d3)](#testing)
 [![UI](https://img.shields.io/badge/UI-local%20web%20panel-9333ea)](#the-control-panel-web-ui)
 [![License](https://img.shields.io/badge/license-MIT-6d28d9)](LICENSE)
@@ -91,7 +91,7 @@ input path, exactly as an assistive mouse or trackball would.
 
 ## Install & run
 
-**Download [`CursorAssist-v1.0.3.exe`](https://github.com/slayfoids/curse-assist/releases)
+**Download [`CursorAssist-v1.0.4.exe`](https://github.com/slayfoids/curse-assist/releases)
 from the latest release and double-click it.** That's the whole install — one
 file, no Python, no packages, nothing to set up.
 
@@ -310,6 +310,19 @@ only engages after the velocity estimate has warmed up on a target. A small
 **deadband** ignores sub-pixel detection wiggle so a still target is rock
 steady.
 
+**Why the scan rate is what it is:** capture cost scales with the area
+grabbed, and it dominates everything else — a full-screen grab of a 1920x1200
+desktop costs ~67 ms, which alone caps the loop near **15 fps** no matter how
+cheap detection is (detection of the same frame costs ~3 ms). While a target is
+locked, only the window around it is grabbed: ~17 ms, or **60 fps**.
+
+That 60 is not a software limit — it is the display's refresh rate. A screen
+draws new content at its refresh rate and no faster, so scanning a 60 Hz display
+120 times a second would read half the frames twice and learn nothing from them.
+On a 120 Hz or 144 Hz panel the same code simply runs faster; there is nothing to
+configure. If tracking a fast target still misses, the lever is a faster display
+or a smaller capture region, not more scanning of the same pixels.
+
 **How steadiness works:** jitter and lag pull in opposite directions — smoothing
 hard kills detection noise on a resting target but drags behind a moving one,
 and a single fixed blend has to be bad at one of them. The target is filtered
@@ -333,7 +346,7 @@ mid-flight and throwing away the velocity the lead depends on.
 | File | Responsibility |
 |---|---|
 | `config.py` | Thread-safe shared state (`AppState`, `ColorTarget`, capture config). |
-| `capture.py` | `mss` screen capture and OBS virtual-camera capture. |
+| `capture.py` | `mss` screen capture and OBS virtual-camera capture, with follow-window grabs. |
 | `detection.py` | HSV masking (multi-color), contour finding, shape classification. |
 | `segmentation.py` | Split a figure's bounding box into named body regions. |
 | `targeting.py` | Target lock, best-coverage snap, teleport guard, one-euro smoothing + lead (downscale-aware). |

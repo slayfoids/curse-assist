@@ -87,7 +87,24 @@ class SimWorld:
         world = self
 
         class Cap:
-            origin = (0, 0)
+            """Mirrors the real backend, including follow-window support.
+
+            Modelling the crop matters: the aim point is mapped back to screen
+            coordinates through ``origin``, so a follow window that reported
+            the wrong origin would put the pointer somewhere else entirely and
+            a sim without it would never notice.
+            """
+            base_origin = (0, 0)
+
+            def __init__(_c):
+                _c._follow = None
+
+            @property
+            def origin(_c):
+                return (0, 0) if _c._follow is None else _c._follow[:2]
+
+            def set_follow(_c, box):
+                _c._follow = box
 
             def grab(_c):
                 period = 1.0 / world.fps
@@ -95,12 +112,23 @@ class SimWorld:
                 if wait > 0:
                     time.sleep(wait)
                 world._last_grab = time.perf_counter()
-                return world.frame_now()
+                f = world.frame_now()
+                if _c._follow is not None:
+                    x, y, w, h = (int(v) for v in _c._follow)
+                    fh, fw = f.shape[:2]
+                    x0, y0 = max(0, x), max(0, y)
+                    x1, y1 = min(fw, x + w), min(fh, y + h)
+                    if x1 - x0 >= 16 and y1 - y0 >= 16:
+                        _c._follow = (x0, y0, x1 - x0, y1 - y0)
+                        return f[y0:y1, x0:x1]
+                    _c._follow = None
+                return f
 
             def close(_c):
                 pass
 
-        ctrl.make_capture = lambda cfg: Cap()
+        self._cap = Cap()
+        ctrl.make_capture = lambda cfg: self._cap
         self._t0 = time.perf_counter()
         return self
 

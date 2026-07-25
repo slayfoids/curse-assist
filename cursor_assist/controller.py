@@ -59,6 +59,17 @@ ADAPT_RESCAN_EVERY = 12    # force a full scan this often, to find new targets
 ADAPT_MAX_AREA_FRAC = 0.45  # skip the window if it isn't actually smaller
 
 
+def _intersect(a, b):
+    """Overlap of two (left, top, w, h) boxes, or None if they don't meet."""
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    x0, y0 = max(ax, bx), max(ay, by)
+    x1, y1 = min(ax + aw, bx + bw), min(ay + ah, by + bh)
+    if x1 - x0 < 16 or y1 - y0 < 16:
+        return None
+    return (x0, y0, x1 - x0, y1 - y0)
+
+
 class AssistController:
     def __init__(self, state: AppState, on_dwell_start: Optional[Callable] = None,
                  on_click: Optional[Callable] = None,
@@ -177,6 +188,47 @@ class AssistController:
                     time.sleep(0.1)
                     continue
                 capture = self._ensure_capture(snap)
+
+                # Ask the capture for just the follow window *before* grabbing.
+                # Grab cost scales with captured area and dominates everything
+                # else — a full-screen grab alone caps the loop near 15 fps on
+                # a 1920x1200 desktop, so cropping only after the grab left the
+                # real cost untouched.
+                self._adapt_frames += 1
+                self._adapt_active = False
+                follow_box = None
+                # The user's detection area, in absolute desktop pixels. A
+                # backend that predates follow support has no base_origin;
+                # without a follow window the two are the same thing anyway.
+                base_ox, base_oy = getattr(capture, "base_origin",
+                                           capture.origin)
+                roi_abs = None
+                if snap.roi_w > 0 and snap.roi_h > 0:
+                    roi_abs = (base_ox + snap.roi_x, base_oy + snap.roi_y,
+                               snap.roi_w, snap.roi_h)
+
+                if (snap.adaptive_roi and snap.lock_target
+                        and self._adapt_at is not None
+                        and self._adapt_miss < ADAPT_MISS_MAX
+                        and self._adapt_frames % ADAPT_RESCAN_EVERY != 0):
+                    half = int(max(ADAPT_MIN_HALF,
+                                   self._tracker.speed() * ADAPT_SPEED_LEAD))
+                    follow_box = (self._adapt_at[0] - half,
+                                  self._adapt_at[1] - half,
+                                  2 * half, 2 * half)
+                    # Intersect with the detection area here, in one shared
+                    # coordinate space. Cropping the follow window again after
+                    # the grab would apply the area's offset a second time,
+                    # inside the window, and put the aim point in the wrong
+                    # place entirely.
+                    if roi_abs is not None:
+                        follow_box = _intersect(follow_box, roi_abs)
+                    self._adapt_active = follow_box is not None
+                try:
+                    capture.set_follow(follow_box)
+                except AttributeError:      # a backend without follow support
+                    self._adapt_active = False
+
                 frame = capture.grab()
                 if frame is None:
                     self._publish(None)
@@ -185,9 +237,11 @@ class AssistController:
                     continue
 
                 # Optional detection area (ROI): crop the frame and shift the
-                # origin so screen mapping stays correct.
+                # origin so screen mapping stays correct. Skipped while
+                # following — the follow window was already intersected with
+                # the area above, in absolute coordinates.
                 origin = capture.origin
-                if snap.roi_w > 0 and snap.roi_h > 0:
+                if not self._adapt_active and roi_abs is not None:
                     fh, fw = frame.shape[:2]
                     x0 = max(0, min(snap.roi_x, fw - 1))
                     y0 = max(0, min(snap.roi_y, fh - 1))
@@ -196,33 +250,11 @@ class AssistController:
                     frame = frame[y0:y1, x0:x1]
                     origin = (origin[0] + x0, origin[1] + y0)
 
-                scale = max(0.2, min(1.0, snap.detect_scale))
-
-                # Adaptive ROI: scan a window around the locked target at full
-                # resolution rather than the whole screen downscaled. Cheaper
-                # (higher detection fps, which is the real limit on tracking)
-                # and more precise (no downscale rounding on the aim point).
-                self._adapt_frames += 1
-                self._adapt_active = False
-                if (snap.adaptive_roi and snap.lock_target
-                        and self._adapt_at is not None
-                        and self._adapt_miss < ADAPT_MISS_MAX
-                        and self._adapt_frames % ADAPT_RESCAN_EVERY != 0):
-                    fh, fw = frame.shape[:2]
-                    half = max(ADAPT_MIN_HALF,
-                               self._tracker.speed() * ADAPT_SPEED_LEAD)
-                    bx = self._adapt_at[0] - origin[0]
-                    by = self._adapt_at[1] - origin[1]
-                    x0 = int(max(0, bx - half))
-                    x1 = int(min(fw, bx + half))
-                    y0 = int(max(0, by - half))
-                    y1 = int(min(fh, by + half))
-                    if (x1 - x0) >= 48 and (y1 - y0) >= 48 and \
-                            (x1 - x0) * (y1 - y0) < ADAPT_MAX_AREA_FRAC * fw * fh:
-                        frame = frame[y0:y1, x0:x1]
-                        origin = (origin[0] + x0, origin[1] + y0)
-                        scale = 1.0
-                        self._adapt_active = True
+                # A follow window is already small; scanning it at full
+                # resolution costs little and keeps downscale rounding out of
+                # the aim point.
+                scale = (1.0 if self._adapt_active
+                         else max(0.2, min(1.0, snap.detect_scale)))
 
                 small = (cv2.resize(frame, None, fx=scale, fy=scale,
                                     interpolation=cv2.INTER_AREA)

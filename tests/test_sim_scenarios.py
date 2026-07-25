@@ -197,3 +197,48 @@ def test_body_attraction_on_moving_figure(region, y_lo, y_hi):
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# ---------------------------------------------- adaptive ROI (target follow)
+
+def test_target_follow_engages_and_keeps_aim_correct():
+    """Following must actually kick in, and must not move the aim point.
+
+    The follow window changes the frame's origin, and the aim point is mapped
+    back to screen coordinates through it — get that wrong and the pointer
+    goes somewhere else entirely while every timing metric still looks fine.
+    So this asserts both that following happened *and* that the pointer still
+    lands on the target.
+    """
+    tx, ty = W // 2 + 120, H // 2 - 60
+
+    def draw(f, t):
+        cv2.circle(f, (tx, ty), 26, RED, -1)
+
+    st = make_state(adaptive_roi=True, lock_target=True)
+    with SimWorld(draw, fps=60) as w:
+        w.x, w.y = 140.0, 620.0
+        seen_following = []
+        w.run(st, 2.2,
+              sample=lambda _t: seen_following.append(st.get("roi_following")))
+        err = math.hypot(w.x - tx, w.y - ty)
+
+    assert any(seen_following), "follow window never engaged"
+    assert err <= 4.0, f"aim landed {err:.1f}px off while following"
+
+
+def test_target_follow_off_matches_follow_on():
+    """Turning following on must not change where the pointer ends up."""
+    tx, ty = W // 2 - 90, H // 2 + 70
+
+    def draw(f, t):
+        cv2.circle(f, (tx, ty), 24, RED, -1)
+
+    errs = {}
+    for flag in (False, True):
+        st = make_state(adaptive_roi=flag, lock_target=True)
+        with SimWorld(draw, fps=60) as w:
+            w.x, w.y = 820.0, 150.0
+            w.run(st, 2.0)
+            errs[flag] = math.hypot(w.x - tx, w.y - ty)
+    assert errs[True] <= 4.0 and errs[False] <= 4.0, errs

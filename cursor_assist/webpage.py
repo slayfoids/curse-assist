@@ -948,6 +948,10 @@ function attachTips(){
    Kept here so the panel is the single place a user looks; each entry says
    what changed in terms of what they would have noticed. */
 const NOTES=[
+ {v:"1.0.4",t:"Four times the scan rate",items:[
+   ["Much faster scanning","Grabbing the whole screen cost about 67ms — that alone held everything to roughly 15 looks per second, however little work the rest did. While locked on, only the small area around your target is grabbed now, which is about 4× quicker and reaches 60 per second: the most your screen can actually show."],
+   ["Why not higher","A 60Hz screen only draws 60 new pictures a second, so looking more often than that just sees the same picture twice. On a 120Hz or 144Hz screen this will go faster on its own — nothing to change."],
+ ]},
  {v:"1.0.3",t:"Aim line, plain-English help, and two real fixes",items:[
    ["Aim guide line","A cyan line now runs from your pointer to the exact pixel it's steering for, so you can move with it instead of fighting it by accident."],
    ["Dwell clicks that never fired","If the colour flickered for even one frame the click timer silently restarted, so on a jumpy picture it could never finish. It now rides out brief dropouts."],
