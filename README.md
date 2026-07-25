@@ -35,8 +35,8 @@ pointer on things they want to interact with on their own screen.*
   the pointer eases toward it, smoothly and frame-rate independently.
 - 🔒 **Single-target lock** — sticks to one target until it's gone; never
   drifts to the middle of a group or twitches between look-alikes.
-- ⭕ **Best-coverage snap** — after resting on the color, aim refines to where
-  the circle covers the *most* color.
+- ⭕ **Best-coverage snap** — aim refines to where the circle covers the *most*
+  color, after resting on it or instantly (0 ms) for targets that keep moving.
 - 🧍 **Body aim** — Head / Torso / Arms / Legs / Feet targeting on a drawn
   figure, pose-adaptive bands, tunable part attraction.
 - 🖱️ **Toggle or Hold activation** — flip with a hotkey, or stay active only
@@ -84,51 +84,38 @@ input path, exactly as an assistive mouse or trackball would.
 
 ---
 
-## Install
+## Install & run
 
-Requires Python 3.10+ (with Tkinter, which ships with the standard Windows
-CPython installer).
+**Download [`CursorAssist.exe`](https://github.com/slayfoids/curse-assist/releases)
+from the latest release and double-click it.** That's the whole install — one
+file, no Python, no packages, nothing to set up.
+
+It starts the engine and opens the **web control panel** in your browser (a local
+server on `http://127.0.0.1:8756`, loopback only — never exposed to the network).
+A small console window stays open behind it; that's where errors would appear.
+
+Two things to expect on a fresh PC, both normal for any unsigned program:
+
+- Windows SmartScreen shows *"Windows protected your PC"* → **More info** →
+  **Run anyway**. It only asks once.
+- Antivirus may flag a self-extracting build. The exe is deliberately unpacked
+  and unobfuscated so it can be inspected.
+
+> **Setting it up for someone else?** [**INSTALL.md**](INSTALL.md) is the full
+> step-by-step, with nothing assumed.
+
+## Run from source
+
+Only needed to change the code. Requires Python 3.10+ (with Tkinter, which ships
+with the standard Windows CPython installer).
 
 ```bash
 py -m pip install -r requirements.txt
+py -m cursor_assist
 ```
 
 If `keyboard` fails to install (it needs admin on some systems), the app still
 runs — the global hotkey falls back to a window-focused key binding.
-
-> **New to this / setting it up for someone else?** Follow the full step-by-step
-> [**INSTALL.md**](INSTALL.md) — it covers installing Python, getting the
-> project, and running in background mode, with nothing assumed.
-
-### Standalone .exe (nothing to install on the far end)
-
-To hand someone a single file that needs no Python at all:
-
-```bash
-py -m pip install pyinstaller
-py tools/build_exe.py
-```
-
-That produces **`dist/CursorAssist.exe`** (~67 MB — it carries its own Python,
-OpenCV and numpy). Send that one file; double-clicking it starts the engine and
-opens the same control panel. The build is defined by
-[`CursorAssist.spec`](CursorAssist.spec) and is plain and unobfuscated: the
-console stays enabled so a failure to start is visible and screenshottable, and
-UPX packing is off (it trips antivirus heuristics for no real gain).
-
-Because the exe is unsigned, Windows SmartScreen will show *"Windows protected
-your PC"* on first run — the recipient clicks **More info → Run anyway**. Signing
-it with a code-signing certificate is the only real fix for that.
-
-## Run
-
-```bash
-py -m cursor_assist
-```
-
-This starts the engine and opens the **web control panel** in your default
-browser (a local server on `http://127.0.0.1:8756`, loopback only — never exposed
-to the network). Or double-click / run `run.py`.
 
 Options:
 
@@ -138,11 +125,27 @@ py -m cursor_assist --no-browser    # don't auto-open; just print the URL
 py -m cursor_assist --tk            # legacy Tkinter panel instead of the web UI
 ```
 
+### Build the exe yourself
+
+```bash
+py -m pip install pyinstaller
+py tools/build_exe.py
+```
+
+That produces **`dist/CursorAssist.exe`** (~67 MB — it carries its own Python,
+OpenCV and numpy). The build is defined by [`CursorAssist.spec`](CursorAssist.spec)
+and is plain and unobfuscated: the console stays enabled so a failure to start is
+visible and screenshottable, and UPX packing is off (it trips antivirus
+heuristics for no real gain). Set `console=False` in the spec for a no-console
+build. Signing it with a code-signing certificate is the only real fix for the
+SmartScreen prompt.
+
 ### Run in the background (no console window)
 
-Day-to-day use, with **no terminal window** left open — just the control panel.
-Each launch gets a **randomly generated instance name** (also the process name in
-Task Manager). Double-click **`Start Cursor Assist (background).cmd`**, or:
+A from-source convenience: run with **no terminal window** left open — just the
+control panel. Each launch gets a **randomly generated instance name** (also the
+process name in Task Manager). Double-click
+**`Start Cursor Assist (background).cmd`**, or:
 
 ```bash
 py background\start_hidden.py
@@ -158,7 +161,7 @@ Under the hood this runs the app with `pythonw.exe` (the windowless interpreter)
 via a randomly named copy, and records the name + PID in `.runtime\instance.json`
 so it's easy to find and stop. It is transparent, not stealthy — the control
 panel stays visible and nothing auto-starts at boot unless you set that up
-yourself (see [INSTALL.md](INSTALL.md#step-7--optional-start-automatically-when-you-log-in)).
+yourself (see [INSTALL.md](INSTALL.md#step-4--optional-start-it-automatically-at-login)).
 See [background/start_hidden.py](background/start_hidden.py) for details.
 
 ### Capture options
