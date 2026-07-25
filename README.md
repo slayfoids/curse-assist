@@ -36,16 +36,20 @@ pointer on things they want to interact with on their own screen.*
   the pointer eases toward it, smoothly and frame-rate independently.
 - 🔒 **Single-target lock** — sticks to one target until it's gone; never
   drifts to the middle of a group or twitches between look-alikes.
-- ⭕ **Best-coverage snap** — aim refines to where the circle covers the *most*
-  color, after resting on it or instantly (0 ms) for targets that keep moving.
+- ⭕ **Best-coverage snap** — aim refines to the densest part *of the locked
+  target*, after resting on it or instantly (0 ms) for targets that keep moving.
+  Confined to that target, so it can never walk the aim onto a neighbour.
+- ◫ **Drag-a-box detection area** — dim the desktop and drag over the part to
+  watch, snipping-tool style, instead of typing four pixel coordinates.
 - 🧍 **Body aim** — Head / Torso / Arms / Legs / Feet targeting on a drawn
   figure, pose-adaptive bands, tunable part attraction.
 - 🖱️ **Toggle or Hold activation** — flip with a hotkey, or stay active only
   while a mouse side button is held. Audio cues: 2 high beeps on, 2 low off.
 - 📷 **Screenshot colour picker** — freeze a frame and click the exact pixel,
   instead of chasing a live eyedropper that needs a steady click.
-- 🎚️ **Pointer calibration** — measures this PC's real pointer gain, so a low
-  Windows mouse sensitivity doesn't make the pull sluggish or fall short.
+- 🎚️ **Any mouse sensitivity** — reads this PC's Windows pointer speed and
+  acceleration and models them as a curve, so the pull behaves the same at
+  1/32× and at 3.5×, without a wrong-sized first move at either end.
 - 🖲️ **Flexible clicking** — dwell auto-click, instant trigger key/button,
   repeat auto-fire, or fully manual.
 - 💾 **Saved configs** — snapshot your whole setup under a unique code like
@@ -208,8 +212,8 @@ as a circle) · **Target colors** (one or more colors, picker, eyedropper,
 sensitivity, min area, thin-outline) · **Targeting** (single-target lock,
 best-coverage snap) · **Target region** (six buttons) ·
 **Capture source** (Screen/OBS, monitor, region, detail) · **Detection area**
-(limit the search to a pixel box) · **Input control** (steady the pointer against
-tremor) · **Hotkeys** (all rebindable, with Record).
+(drag a box over the part to watch) · **Input control** (steady the pointer
+against tremor) · **Hotkeys** (all rebindable, with Record).
 
 ## How to use it
 
@@ -246,7 +250,7 @@ within which the tool offers guidance.
 | **Precision zone** | Within this many px of the target the pointer eases off and settles, instead of darting the last stretch and ringing around it. It fades out as the target starts moving, so it never holds the pointer back mid-chase. 0 = off. |
 | **Zone slowdown** | How much the pointer is slowed at the centre of the precision zone. Lower = gentler arrival, slower settle. |
 | **Accel limit** | Caps how fast the pointer's own speed may change (px/s²), so a single bad detection frame can only ramp the pointer, never fling it. 0 = off. |
-| **Pointer calibration** | Windows scales relative mouse input by the pointer-speed slider and "enhance pointer precision", so on a **low-sensitivity setup** a requested move lands short and the pull feels sluggish. The engine measures the real ratio each move and divides by it, keeping speed and reach the same at any sensitivity. **Extra gain** is a manual multiplier on top if it still under-reaches. |
+| **Pointer calibration** | Windows scales relative mouse input by the pointer-speed setting (1/32× to 3.5×) and bends it further with "enhance pointer precision", which makes the scaling depend on how fast the pointer is already moving. The engine **reads both settings** and models the result as a curve rather than a single number — so the first move is already the right size at either extreme, and it keeps refining from what actually happens. The panel shows your Windows setting and how finely the pointer can be placed: at a high pointer speed one step of the mouse moves several pixels, and nothing can place it closer than that. **Extra gain** is a manual multiplier on top — raising it reaches further. |
 | **Click mode** | **Dwell** (click after resting on the target), **Key** (a chosen key issues the click), or **Off** (click manually). |
 | **Dwell time** | In dwell mode, how long to rest before a click is issued (50–1500 ms). |
 | **Click key/button** | In key mode, what issues the click: a keyboard key, or a mouse button (RMB / MMB / side buttons) via quick-pick buttons — no need to record. |
@@ -256,11 +260,12 @@ within which the tool offers guidance.
 | **Assist radius** | Only guide toward colors within this distance of the pointer (0 = whole screen). |
 | **Show circle** | Draw the assist-area circle around the pointer (green when a color is engaged). |
 | **Target colors** | Add one or more colors via picker or on-screen **eyedropper**; click a swatch to remove. |
-| **Sensitivity** | How closely a pixel must match the chosen color (higher = matches a wider range). |
+| **Sensitivity** | How closely a pixel must match the chosen color (higher = matches a wider range). Widens the range of *hues* accepted while keeping the color distinct from grey and from black, so the whole slider stays usable — the panel shows what percentage of the frame your colors match, and anything past about a quarter is too much to aim at. |
 | **Min area** | Ignores colored specks smaller than this (px²). |
 | **Detect thin outlines** | Detect colored *outlines*, not just filled color. |
 | **Lock onto one target** | Pick a single color blob and keep guiding toward *it* until it disappears (plus a short grace), then re-acquire. With several same-color targets on screen this prevents the pointer from drifting to the middle of the group or twitching between them. |
-| **Best-coverage snap** | After the pointer has rested on the color for the set time (default 1 s), aim is refined to the spot where the drawn circle (**Circle size**, falling back to the assist radius) covers the *most* target color. |
+| **Best-coverage snap** | After the pointer has rested on the color for the set time (default 1 s), aim is refined to the spot where the snap circle covers the *most* target color. The search is confined to the locked blob, so this refines the aim **inside the current target** and can never move it onto a neighbouring one. |
+| **Snap circle** | Radius of that coverage circle, in px. **0 (default) sizes it from the target itself** — about a third of its narrow side — which is right because the useful size is a property of the target, not of your setup. |
 | **Snap after (ms)** | How long the pointer must sit on the color before the best-coverage snap engages (0–3000 ms). **Set it to 0 for an instant snap:** the timed path only starts its clock once the pointer is *resting on* the color, which a moving target never allows — so 0 skips that gate entirely and refines aim from the first frame. |
 | **Body-part detection** | Off (default) = guide to the color directly. On = aid a body region of a drawn figure. |
 | **Target region** | When body-part detection is on, which region (Head/Torso/Arms/Legs/Feet) to aid. Bands adapt to the figure's pose (standing / crouching / prone). |
@@ -268,7 +273,7 @@ within which the tool offers guidance.
 | **Saved configs** | Snapshot the entire current setup under a unique random code (e.g. `CRS-7KQ2XN`). List, load, or delete saved configs; click a code to copy it, or type a code to load it on another setup. |
 | **Capture source** | Desktop screen (default) or an OBS virtual camera; monitor / region. |
 | **Detail (speed)** | Detection downscale — lower = faster, higher = more detail. |
-| **Detection area** | Restrict color detection to a pixel box (X/Y/W/H); 0 0 0 0 = whole frame. |
+| **Detection area** | Restrict color detection to a box. **Select on screen** dims the desktop and takes a dragged rectangle, snipping-tool style, with a live size readout and Escape to cancel (multi-monitor aware). **Crop a screenshot** does the same over a frozen frame inside the panel. **Show the area on screen** outlines it on the desktop. Exact X/Y/W/H can still be typed; 0 0 0 0 = whole frame. |
 | **Steady the pointer** | While the tool is moving the pointer, reduce the effect of the user's own hand tremor so it doesn't fight the guidance (uses a Windows low-level mouse hook; clicks still pass). |
 | **Hotkeys** | Rebind any hotkey — type it or click **Record** and press the keys. |
 | **Reset / Quit** | Restore defaults · stop the app. Changes autosave. |
@@ -287,11 +292,12 @@ within which the tool offers guidance.
    screen / OBS vcam ─▶ (crop ROI) ─▶ downscale ─▶ HSV mask (all colors) ─▶ contours
        ─▶ color mode: lock onto one blob, hold it until it's gone   (default)
        ─▶ body-part mode: split figure into regions, target the active one
-       ─▶ (after resting on color) snap to the max-coverage circle position
+       ─▶ (after resting on color) snap to max coverage *within the locked blob*
        ─▶ teleport guard + deadband ─▶ one-euro smoothing ─▶ publishes target ─┐
                                                           │  (shared target)
  MOVEMENT thread (~240 Hz, independent)                   ▼
    read latest target ─▶ time-based ease: new = cur + (target-cur)·α(dt)
+       ─▶ px ─▶ device units via the pointer gain curve (Windows speed + accel)
        ─▶ SendInput relative move (speed-capped) ─▶ dwell timer ─▶ click
        ─▶ (optional) steady the pointer against hand tremor
 ```
@@ -358,11 +364,13 @@ mid-flight and throwing away the velocity the lead depends on.
 | `capture.py` | `mss` screen capture and OBS virtual-camera capture, with follow-window grabs. |
 | `detection.py` | HSV masking (multi-color), contour finding, shape classification. |
 | `segmentation.py` | Split a figure's bounding box into named body regions. |
-| `targeting.py` | Target lock, best-coverage snap, teleport guard, one-euro smoothing + lead (downscale-aware). |
+| `targeting.py` | Target lock, best-coverage snap (confined to the locked blob), teleport guard, one-euro smoothing + lead (downscale-aware). |
 | `cursor.py` | `SendInput` relative move + click; time-based ease; dwell machine. |
+| `pointer.py` | Windows pointer ballistics: reads the pointer-speed and acceleration settings, models px-per-unit as a learned curve. |
 | `holdwatch.py` | Hold-to-activate by polling real key state (no global hook). |
 | `mouse_block.py` | Optional low-level hook to steady the pointer against tremor. |
-| `overlay.py` | Transparent click-through assist-area circle overlay. |
+| `overlay.py` | Transparent click-through assist-area circle overlay; draws the detection area and hosts the region picker. |
+| `region_picker.py` | Drag-a-box screen region selector (snipping-tool style) and capture-relative geometry. |
 | `controller.py` | Decoupled detection + ~180 Hz movement threads. |
 | `webserver.py` | Local HTTP server + JSON API for the web UI. |
 | `webpage.py` | The self-contained dark web control panel (HTML/CSS/JS). |

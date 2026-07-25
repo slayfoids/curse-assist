@@ -12,6 +12,8 @@ import time
 from ctypes import wintypes
 from typing import Optional, Tuple
 
+from . import pointer
+
 # --- Win32 SendInput plumbing ---------------------------------------------
 
 INPUT_MOUSE = 0
@@ -84,20 +86,27 @@ class CursorGlider:
     Crucially it keeps a **sub-pixel accumulator**: a fractional step never gets
     rounded away to zero, it accumulates until it moves a whole pixel. Without
     this the cursor stalled several pixels short of the target on gentle settings
-    ("doesn't fully go to the color"). Within ``lock_px`` it lands exactly on the
-    target, so aim is pixel-accurate.
+    ("doesn't fully go to the color").
+
+    Requests are converted to device units through :class:`~.pointer.GainCurve`,
+    which knows what Windows will actually do with them at this machine's
+    pointer-speed and acceleration settings — see :mod:`.pointer`. Within
+    ``lock_px`` it lands as precisely as that path allows: exactly on the target
+    at a normal pointer speed, and within one device unit on a high one, where
+    nothing finer is reachable at all.
     """
 
-    def __init__(self):
-        self._ax = 0.0  # carried sub-pixel remainder
+    def __init__(self, curve=None):
+        self._ax = 0.0  # carried sub-pixel remainder, in device units
         self._ay = 0.0
         self._speed = 0.0   # current pointer speed, px/s (for accel limiting)
-        # Measured ratio of pixels actually travelled to pixels requested.
+        # How far a request actually travels, as a function of its size.
         # Windows scales relative mouse input by the pointer-speed slider and
-        # "enhance pointer precision", so on a low-sensitivity setting a
-        # requested 10 px move can land 4 px. Dividing by the measured gain
-        # makes the pull behave the same at any Windows pointer speed.
-        self._gain = 1.0
+        # bends it further with "enhance pointer precision", so a requested
+        # 10 px move can land as 1 px on a low setting or 35 px on a high one.
+        # The curve is seeded from the OS settings, so the very first move is
+        # already right, and refined from what actually happens.
+        self._curve = curve if curve is not None else pointer.GainCurve()
 
     def reset(self) -> None:
         self._ax = 0.0
@@ -105,8 +114,60 @@ class CursorGlider:
         self._speed = 0.0
 
     @property
+    def curve(self):
+        return self._curve
+
+    @property
     def gain(self) -> float:
-        return self._gain
+        """Learned pixels-per-unit at base speed, for display."""
+        return self._curve.scale
+
+    @property
+    def resolution_px(self) -> float:
+        """Smallest move the pointer can make at all, in screen pixels.
+
+        One device unit is ``gain`` pixels, so at 3.5x nothing finer than
+        3.5 px is reachable. Chasing below this is what makes a
+        high-sensitivity pointer buzz around the target instead of settling.
+        """
+        return self._curve.unit_px()
+
+    def _best_landing(self, rx: float, ry: float, dist: float):
+        """Whole-unit move that lands closest to the target, or ``(0, 0)``.
+
+        The gliding path scales both axes by one shared factor, which keeps the
+        motion straight but means the reachable landing points are limited to
+        that line. On a high pointer speed, where a single unit is several
+        pixels, that was the difference between stopping 2.5 px out and landing
+        on the target: choosing each axis separately reaches the whole lattice.
+
+        ``(0, 0)`` when no move clearly improves on standing still — at a
+        coarse resolution the nearest whole unit is often *further* away, and
+        taking it anyway is what turned "arrived" into a permanent twitch.
+
+        The improvement has to clear a margin rather than merely be positive.
+        Only the integer cursor position is observable, and the gain is an
+        estimate, so a move that lands the same distance out on the *opposite*
+        side can still look like progress against those rounded numbers — which
+        is exactly what it does, symmetrically, from over there. Measured, that
+        produced a perfect (1,1)/(-1,-1) cycle running at the full tick rate and
+        68% of the travel spent going nowhere.
+        """
+        ux, uy = pointer.emit_vector(self._curve, rx, ry)
+        bx, by = int(round(ux)), int(round(uy))
+        margin = max(0.5, 0.3 * self._curve.unit_px())
+        best = (0, 0)
+        best_err = dist - margin
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                mx, my = bx + dx, by + dy
+                if not (mx or my):
+                    continue
+                g = self._curve.gain_for(math.hypot(mx, my))
+                err = math.hypot(rx - mx * g, ry - my * g)
+                if err < best_err:
+                    best_err, best = err, (mx, my)
+        return best
 
     def step(self, target_screen: Tuple[int, int], dt: float, tau: float,
              max_speed_px_s: float, lock_px: float = 2.0,
@@ -114,16 +175,26 @@ class CursorGlider:
              precision_px: float = 0.0, precision_slow: float = 1.0,
              gain_scale: float = 1.0, auto_gain: bool = True
              ) -> Tuple[int, int]:
+        if auto_gain:
+            self._curve.refresh()
         cx, cy = get_cursor_pos()
         rx = target_screen[0] - cx
         ry = target_screen[1] - cy
         dist = math.hypot(rx, ry)
 
-        # Close enough: land exactly on the target (imperceptible, pixel-perfect).
+        # Nothing finer than one device unit can be expressed, so on a high
+        # pointer speed the landing zone has to widen to match. Held at the old
+        # fixed 2 px, a 3.5x pointer could never satisfy it: every correction
+        # overshot to the other side and the pointer sat there vibrating.
+        res = self._curve.unit_px()
+        lock_px = max(lock_px, 0.6 * res)
+
+        # Close enough: place the pointer as precisely as the input path allows.
         if dist <= lock_px:
             self.reset()
-            move_relative(int(round(rx / max(self._gain, 0.05))),
-                          int(round(ry / max(self._gain, 0.05))))
+            mx, my = self._best_landing(rx, ry, dist)
+            if mx or my:
+                move_relative(mx, my)
             return get_cursor_pos()
 
         # Precision zone: ease off near the target so the pointer settles onto
@@ -165,11 +236,17 @@ class CursorGlider:
         else:
             self._speed = step / dt if dt > 0 else 0.0
 
-        # Compensate for the OS pointer gain, then accumulate sub-pixel
-        # movement; emit only whole pixels and carry the rest.
-        g = max(self._gain, 0.05) * max(gain_scale, 0.05)
-        self._ax += sx / g
-        self._ay += sy / g
+        # Convert the wanted pixels into device units through the curve, then
+        # accumulate the fraction; emit only whole units and carry the rest.
+        #
+        # `gain_scale` is the user's manual trim and *multiplies* the distance
+        # asked for. It used to divide it, so the slider documented as "raise
+        # this if it still under-reaches" made it under-reach further — turning
+        # it up was the exact opposite of the fix its own label suggested.
+        gs = max(gain_scale, 0.05)
+        ux, uy = pointer.emit_vector(self._curve, sx * gs, sy * gs)
+        self._ax += ux
+        self._ay += uy
         mx = int(self._ax)   # trunc toward zero
         my = int(self._ay)
         self._ax -= mx
@@ -178,15 +255,12 @@ class CursorGlider:
             move_relative(mx, my)
         nx, ny = get_cursor_pos()
 
-        # Learn the gain from what actually happened. Only large moves are
-        # informative -- a 1 px request rounds too coarsely to measure.
-        if auto_gain:
-            asked = math.hypot(mx, my)
-            if asked >= 4.0:
-                got = math.hypot(nx - cx, ny - cy)
-                if got > 0.0:
-                    obs = max(0.15, min(4.0, got / asked))
-                    self._gain += 0.08 * (obs - self._gain)
+        # Learn from what actually happened, per request size — with
+        # acceleration on, the same request travels a different distance
+        # depending on how big it is, so one number cannot describe it.
+        if auto_gain and (mx or my):
+            self._curve.observe(math.hypot(mx, my),
+                                math.hypot(nx - cx, ny - cy))
         return nx, ny
 
 

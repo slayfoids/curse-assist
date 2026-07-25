@@ -78,8 +78,8 @@ def main(argv=None) -> int:
         ControlPanel(state, load_settings=False).run()
     elif args.no_overlay:
         from .webserver import WebApp
-        WebApp(state, port=args.port,
-               open_browser=not args.no_browser).serve_blocking()
+        WebApp(state, port=args.port, open_browser=not args.no_browser,
+               has_overlay=False).serve_blocking()
     else:
         # Web UI in background threads; the crosshair overlay owns the main
         # thread (Tkinter requirement).

@@ -23,7 +23,7 @@ from tkinter import colorchooser
 from typing import Callable, Optional
 
 from . import persistence
-from .config import REGIONS, AppState, ColorTarget
+from .config import REGIONS, AppState, ColorTarget, tolerances_for
 from .controller import AssistController
 
 # --- Theme -----------------------------------------------------------------
@@ -333,21 +333,19 @@ class ControlPanel:
             sw.bind("<Button-1>", lambda e, idx=i: self._remove_color(idx))
 
     def _apply_sensitivity(self, tol: int) -> None:
+        h_tol, s_tol, v_tol = tolerances_for(tol)
         self.state.set("sensitivity", tol)
         with self.state.lock:
             for c in self.state.colors:
-                c.h_tol = tol
-                c.s_tol = min(255, tol * 8)
-                c.v_tol = min(255, tol * 8)
+                c.h_tol, c.s_tol, c.v_tol = h_tol, s_tol, v_tol
         self._schedule_autosave()
 
     def _add_color_rgb(self, r: int, g: int, b: int) -> None:
         h, s, v = _rgb_to_cv_hsv(r, g, b)
-        tol = int(self.state.get("sensitivity"))
+        h_tol, s_tol, v_tol = tolerances_for(int(self.state.get("sensitivity")))
         with self.state.lock:
             self.state.colors.append(ColorTarget(
-                h=h, s=s, v=v, h_tol=tol,
-                s_tol=min(255, tol * 8), v_tol=min(255, tol * 8)))
+                h=h, s=s, v=v, h_tol=h_tol, s_tol=s_tol, v_tol=v_tol))
         self._refresh_swatches()
         self._schedule_autosave()
 

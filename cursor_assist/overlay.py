@@ -17,7 +17,9 @@ import ctypes
 import tkinter as tk
 from ctypes import wintypes
 
+from . import region_picker
 from .config import AppState
+from .region_picker import apply_region, capture_origin
 
 # Extended window styles.
 GWL_EXSTYLE = -20
@@ -31,6 +33,7 @@ SEARCH = "#b273ff"      # circle color while searching (Curse violet)
 LOCKED = "#ff4df0"      # circle color while a target is locked (magenta)
 AIM_LINE = "#00e5ff"    # cyan guide line from the pointer to the aim point
 AIM_HALO = "#0090a8"    # dimmer casing, so the line reads on light backgrounds
+ROI_EDGE = "#7c5cff"    # outline of the configured detection area
 
 
 class CrosshairOverlay:
@@ -56,6 +59,7 @@ class CrosshairOverlay:
         self.root.update_idletasks()
         self._make_click_through()
         self._user32 = ctypes.windll.user32
+        self._picking = False
         self._tick()
 
     def _make_click_through(self) -> None:
@@ -76,13 +80,61 @@ class CrosshairOverlay:
         self._user32.GetCursorPos(ctypes.byref(pt))
         return pt.x, pt.y
 
+    # ------------------------------------------------------- region picker
+    def _service_pick_request(self) -> None:
+        """Run the drag-a-box picker when the panel has asked for one."""
+        if self._picking:
+            return
+        what = self.state.get("region_pick")
+        if not what:
+            return
+        self._picking = True
+        titles = {"roi": "Drag to set the detection area",
+                  "capture": "Drag to set the capture region"}
+
+        def done(box):
+            self._picking = False
+            with self.state.lock:
+                self.state.region_pick = ""
+                if box is not None:
+                    apply_region(self.state, what, box)
+
+        try:
+            region_picker.open_on(self.root, done, titles.get(what, ""))
+        except Exception:
+            self._picking = False
+            self.state.set("region_pick", "")
+
+    def _draw_roi(self) -> None:
+        """Outline the detection area, so it is visible rather than inferred."""
+        if not self.state.get("show_roi"):
+            return
+        w = int(self.state.get("roi_w"))
+        h = int(self.state.get("roi_h"))
+        if w <= 0 or h <= 0:
+            return
+        # roi_x/y are relative to the capture region's top-left corner.
+        ox, oy, _cw, _ch = capture_origin(self.state)
+        x = ox + int(self.state.get("roi_x"))
+        y = oy + int(self.state.get("roi_y"))
+        self.canvas.create_rectangle(x, y, x + w, y + h,
+                                     outline=ROI_EDGE, width=2, dash=(7, 5))
+        self.canvas.create_text(x + 4, max(y - 15, 2), anchor="nw",
+                                fill=ROI_EDGE, text=f"detection area {w}x{h}",
+                                font=("Segoe UI", 9, "bold"))
+
     def _tick(self) -> None:
         if self._quit_event is not None and self._quit_event.is_set():
             self.root.destroy()
             return
 
+        # The panel can only *ask* for the region picker; Tk builds windows
+        # solely on the thread running its loop, which is this one.
+        self._service_pick_request()
+
         self.canvas.delete("all")
         try:
+            self._draw_roi()
             show = self.state.get("show_overlay")
             # Circle size: explicit overlay_radius if set, else the pull radius.
             r = int(self.state.get("overlay_radius")) or int(

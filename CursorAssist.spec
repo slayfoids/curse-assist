@@ -41,6 +41,8 @@ a = Analysis(
         'cursor_assist.gui',
         'cursor_assist.overlay',
         'cursor_assist.webserver',
+        # Imported lazily by the web server's no-overlay fallback path.
+        'cursor_assist.region_picker',
     ],
     hookspath=[],
     hooksconfig={},

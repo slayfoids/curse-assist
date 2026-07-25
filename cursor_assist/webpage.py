@@ -160,17 +160,31 @@ PAGE = r"""<!doctype html>
   .stat .v.bad{color:var(--muted)}
 
   /* --------------------------------------------------------------- controls - */
-  .row{display:flex;align-items:center;gap:12px;margin:11px 0}
-  /* Labels wrap rather than clip: a fixed basis with no wrapping meant any
-     font fallback or display-scaling change cut the text off inside the
-     card's overflow:hidden. */
-  /* Basis allows for the trailing info bubble (15px + margin) as well as the
-     text, so adding one never pushes the label into the clipped state again. */
-  .row label{flex:0 0 154px;color:var(--fg);font-size:13px;
+  /* Two lines, not one: label and value share the top row, the slider spans
+     the full width underneath.
+     The single-line version could not fit. A range input is a replaced element
+     with an intrinsic width around 129px, and `flex:1` leaves `min-width:auto`
+     in force — so the row refused to shrink below label + slider + value, a
+     hard 355px, inside a 248px card. Everything past that was cut off by the
+     card's overflow:hidden, which put every value readout 94px off the right
+     edge of its card and out of sight.
+     Grid columns of `minmax(0,...)` are the fix that keeps it fixed: children
+     are allowed to shrink below their intrinsic width, so no future label or
+     font fallback can push the number out of view again. */
+  /* Rows are pinned explicitly rather than auto-placed. The slider sits
+     between the label and the value in the markup, and a full-width item
+     forces a new grid row — so with auto-placement the value was pushed below
+     the slider onto a third row instead of sitting beside its label. */
+  .row{display:grid;grid-template-columns:minmax(0,1fr) auto;
+    align-items:center;column-gap:10px;row-gap:5px;margin:12px 0}
+  .row label{grid-column:1;grid-row:1;min-width:0;color:var(--fg);font-size:13px;
     overflow-wrap:break-word;hyphens:auto}
-  .row .val{flex:0 0 auto;min-width:48px;text-align:right;
+  .row .val{grid-column:2;grid-row:1;justify-self:end;min-width:44px;
+    text-align:right;
     font-variant-numeric:tabular-nums;color:#fff;font-weight:700;font-size:13px}
-  input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:6px;
+  .row input[type=range]{grid-column:1/-1;grid-row:2;width:100%}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;
+    min-width:0;height:6px;
     border-radius:999px;outline:0;cursor:pointer;
     background:linear-gradient(90deg,var(--a3),var(--a2) var(--p,50%),rgba(200,160,255,.1) var(--p,50%))}
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;height:17px;
@@ -184,7 +198,7 @@ PAGE = r"""<!doctype html>
     background:#fff;box-shadow:0 0 12px var(--a1)}
 
   .toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:11px 0}
-  .toggle > span{font-size:13px}
+  .toggle > span{font-size:13px;min-width:0;overflow-wrap:break-word}
   .toggle small{color:var(--muted);font-size:11px}
   .switch{position:relative;width:46px;height:26px;flex:0 0 auto}
   .switch input{opacity:0;width:0;height:0}
@@ -210,6 +224,7 @@ PAGE = r"""<!doctype html>
   .btn.mini{padding:5px 10px;font-size:12px;border-radius:9px}
   .btn.mini.del{color:#ff9a8a}
   .btns{display:flex;gap:8px;flex-wrap:wrap}
+  .btns > *{min-width:0}
 
   .gridchips{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
   .chip{padding:11px 0;text-align:center;border-radius:12px;background:var(--field);
@@ -217,6 +232,25 @@ PAGE = r"""<!doctype html>
   .chip:hover{transform:translateY(-2px);border-color:var(--edge2)}
   .chip.sel{background:var(--accent);border-color:transparent;color:#fff;
     box-shadow:0 6px 22px rgba(168,85,247,.5)}
+
+  /* ------------------------------------------------- detection-area crop --- */
+  .roi-now{font-size:12px;color:var(--muted);background:var(--field);
+    border:1px solid var(--edge);border-radius:10px;padding:8px 10px;
+    font-variant-numeric:tabular-nums}
+  .roi-now b{color:#e2b8ff}
+  .cropbox{position:relative;overflow:hidden;border:1px solid var(--edge2);
+    border-radius:12px;line-height:0;cursor:crosshair;touch-action:none}
+  .cropbox canvas{display:block;width:100%;height:auto}
+  .cropsel{position:absolute;display:none;border:2px solid var(--a2);
+    background:rgba(217,70,239,.16);pointer-events:none;
+    box-shadow:0 0 0 9999px rgba(7,4,12,.55)}
+  details.adv{margin-top:10px}
+  details.adv summary{cursor:pointer;color:var(--muted);font-size:12px;
+    list-style:none;padding:4px 0}
+  details.adv summary::-webkit-details-marker{display:none}
+  details.adv summary:before{content:"▸ ";color:var(--a1)}
+  details.adv[open] summary:before{content:"▾ "}
+  details.adv summary:hover{color:var(--fg)}
 
   .swatches{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:12px;min-height:40px}
   .sw{width:40px;height:40px;border-radius:12px;position:relative;cursor:pointer;
@@ -230,21 +264,36 @@ PAGE = r"""<!doctype html>
 
   .seg{display:flex;background:var(--field);border:1px solid var(--edge);
     border-radius:13px;padding:4px;gap:4px;margin-bottom:12px}
-  .seg button{flex:1;border:0;background:transparent;color:var(--muted);padding:9px;
-    border-radius:10px;font-weight:700;cursor:pointer;transition:.22s;font-size:13px}
+  /* min-width:0 — flex items otherwise refuse to shrink below their text, and
+     a two-word label then pushes the segment out past the card edge. */
+  .seg button{flex:1;min-width:0;border:0;background:transparent;color:var(--muted);
+    padding:9px 6px;border-radius:10px;font-weight:700;cursor:pointer;
+    transition:.22s;font-size:13px;overflow-wrap:break-word}
   .seg button:hover{color:var(--fg)}
   .seg button.sel{background:var(--accent);color:#fff;
     box-shadow:0 4px 16px rgba(168,85,247,.45)}
 
+  /* Same shrink rule as .row: flex children default to min-width:auto, so a
+     text input keeps its intrinsic width and pushes the last field out of the
+     card. min-width:0 lets the row give way instead of overflowing. */
   .fields{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
-  .fields .lbl{color:var(--muted);font-size:12px}
-  input.txt{width:64px;background:var(--field);border:1px solid var(--edge);color:var(--fg);
+  .fields > *{min-width:0}
+  .fields .lbl{color:var(--muted);font-size:12px;flex:0 0 auto}
+  input.txt{width:64px;min-width:0;background:var(--field);
+    border:1px solid var(--edge);color:var(--fg);
     border-radius:10px;padding:8px 9px;font:inherit;outline:0;transition:.2s}
   input.txt:focus{border-color:var(--a1);box-shadow:0 0 0 3px rgba(168,85,247,.2)}
   input.txt:hover{border-color:var(--edge2)}
-  .hk{display:flex;align-items:center;gap:8px;margin:9px 0}
-  .hk label{flex:0 0 108px;color:var(--muted);font-size:12px;
-    overflow-wrap:break-word;hyphens:auto}
+  /* A four-up numeric grid that stays four-up at any card width. */
+  .quad{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;
+    margin:8px 0}
+  .quad input.txt{width:100%}
+  .hk{display:grid;grid-template-columns:minmax(0,1fr) auto;
+    align-items:center;column-gap:8px;row-gap:6px;margin:9px 0}
+  .hk label{grid-column:1;grid-row:1;min-width:0;color:var(--muted);
+    font-size:12px;overflow-wrap:break-word;hyphens:auto}
+  .hk input{grid-column:1/-1;grid-row:2;width:100%;min-width:0}
+  .hk button{grid-column:2;grid-row:1}
 
 
   /* ---------- section tabs ---------------------------------------------- */
@@ -265,18 +314,18 @@ PAGE = r"""<!doctype html>
     border:1px solid rgba(168,85,247,.34);vertical-align:middle;
     transition:.15s;position:relative}
   .i:hover{background:var(--a1);color:#fff;border-color:var(--a1)}
-  /* Anchored to the icon's left edge and opening rightward, rather than
-     centred. Labels sit at the left of a much wider card, so this direction
-     always has room — centring pushed bubbles off-screen in the left column. */
-  .i::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 9px);
-    left:-4px;transform:translateY(4px);width:250px;max-width:60vw;
+  /* One shared bubble parked on <body> and moved to whichever icon is hovered,
+     rather than a ::after inside the card. Cards clip their contents (the
+     sheen sweep needs overflow:hidden), so a bubble anchored to the icon was
+     cut off by the card edge — - and being 250px wide opening upward, that was
+     most of them. Fixed positioning takes it out of that box entirely. */
+  #tip{position:fixed;z-index:120;width:250px;max-width:min(250px,86vw);
     padding:9px 11px;border-radius:11px;font:400 11.5px/1.45 inherit;
     color:var(--fg);background:rgba(24,14,38,.98);
     border:1px solid var(--edge2);box-shadow:0 12px 34px rgba(0,0,0,.6);
-    opacity:0;pointer-events:none;transition:.16s;z-index:60;text-align:left}
-  .i:hover::after{opacity:1;transform:translateY(0)}
-  /* Applied on hover when opening rightward would leave the viewport. */
-  .i.flip::after{left:auto;right:0}
+    opacity:0;pointer-events:none;transition:opacity .16s;text-align:left;
+    left:0;top:0}
+  #tip.on{opacity:1}
 
   /* ---------- first-paint loader ---------------------------------------- */
   #boot{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;
@@ -307,7 +356,6 @@ PAGE = r"""<!doctype html>
   .rel ul{margin:6px 0 0;padding-left:17px;color:var(--muted)}
   .rel li{margin:4px 0;font-size:12.5px;line-height:1.5}
   .rel li b{color:var(--fg);font-weight:600}
-  .hk input{flex:1}
   .hint{color:var(--muted2);font-size:11.5px;margin-top:3px;line-height:1.5}
   .kbd{display:inline-block;padding:1px 7px;border-radius:6px;background:rgba(233,213,255,.08);
     border:1px solid var(--edge);font-size:11px;font-weight:600;color:var(--fg)}
@@ -350,6 +398,7 @@ PAGE = r"""<!doctype html>
   <div class="blob b3"></div><div class="blob b4"></div>
 </div>
 <div class="grid-lines"></div><div class="noise"></div>
+<div id="tip" role="tooltip"></div>
 
 <div class="topbar"><div class="topbar-inner">
   <div class="brand">
@@ -478,12 +527,16 @@ PAGE = r"""<!doctype html>
     <div class="row"><label>Extra gain</label>
       <input type="range" data-key="pointer_gain" min="0.25" max="4" step="0.05">
       <span class="val"></span></div>
-    <div class="hint">Windows scales relative mouse input by the pointer-speed
-      slider and “enhance pointer precision”, so on a <b>low-sensitivity mouse
-      setup</b> a requested move lands short and the pull feels sluggish. The
-      engine measures the real ratio and divides by it, so it stays quick at any
-      sensitivity. Measured now: <b id="gainNow">—</b>. Raise <b>Extra gain</b>
-      only if it still under-reaches.</div>
+    <div class="roi-now" style="margin:10px 0 8px">Windows setting:
+      <b id="ptrProfile">—</b><br>Measured: <b id="gainNow">—</b></div>
+    <div class="hint">Windows scales mouse movement by the pointer-speed slider,
+      and bends it further with “enhance pointer precision”. That makes the same
+      request travel <b>1 px on a low setting and 35 px on a high one</b>, and
+      travel different distances at different speeds when precision enhancement
+      is on. The engine reads both settings and compensates, so it behaves the
+      same at either extreme.<br><span id="ptrRes"></span><br>
+      Leave <b>Extra gain</b> alone unless it still under-reaches — raising it
+      reaches further, lowering it reaches less.</div>
   </div>
 
   <div class="card s3" data-tab="aim" style="animation-delay:.09s"><h2><span class="ico">⌖</span>Targeting</h2>
@@ -493,14 +546,21 @@ PAGE = r"""<!doctype html>
     <div class="toggle"><span>Target follow<br><small>scan a window, not the whole screen</small></span>
       <label class="switch"><input type="checkbox" data-key="adaptive_roi">
       <span class="track"></span></label></div>
-    <div class="toggle"><span>Best-coverage snap<br><small>after resting on the color</small></span>
+    <div class="toggle"><span>Best-coverage snap<br><small>aim at the thickest part of the target</small></span>
       <label class="switch"><input type="checkbox" data-key="snap_to_best">
       <span class="track"></span></label></div>
-    <div class="row" id="snapRow"><label>Snap after (ms)</label>
-      <input type="range" data-key="snap_after_ms" min="0" max="3000" step="50">
-      <span class="val"></span></div>
+    <div id="snapRow">
+      <div class="row"><label>Snap after (ms)</label>
+        <input type="range" data-key="snap_after_ms" min="0" max="3000" step="50">
+        <span class="val"></span></div>
+      <div class="row"><label>Snap circle</label>
+        <input type="range" data-key="snap_radius" min="0" max="120" step="2">
+        <span class="val"></span></div>
+      <div class="hint" id="snapHint"></div>
+    </div>
     <div class="hint">Lock stops the pointer drifting between several same-color
-      targets. Snap re-aims to where the circle covers the most color.
+      targets. Snap then nudges the aim to the densest part <b>of that target</b>
+      — it can't move it onto a different one.
       Set the delay to <b>0</b> for an instant snap — the timed version waits for
       the pointer to rest on the color, which a moving target never lets it do.</div>
   </div>
@@ -519,8 +579,9 @@ PAGE = r"""<!doctype html>
       <input type="range" data-key="overlay_radius" min="0" max="1000" step="10">
       <span class="val"></span></div>
     <div class="hint">Only assist toward colors within the pull radius of the
-      cursor (0 = whole screen). Circle size is the drawn circle (0 = match
-      pull radius); it also sets the best-coverage snap circle.</div>
+      cursor (0 = whole screen). Circle size is purely the drawn circle
+      (0 = match pull radius) — it no longer doubles as the snap circle, which
+      has its own setting under Targeting.</div>
   </div>
 
 
@@ -602,8 +663,11 @@ PAGE = r"""<!doctype html>
     <div class="toggle"><span>Detect thin outlines</span>
       <label class="switch"><input type="checkbox" data-key="detect_thin_border">
       <span class="track"></span></label></div>
-    <div class="hint">Reds are handled across the hue wrap automatically — a red
-      target matches both ends of the hue circle.</div>
+    <div class="roi-now" style="margin-top:8px" id="covNow">—</div>
+    <div class="hint">Sensitivity widens the range of hues that count as your
+      colour, while keeping it distinct from grey and from black — so the whole
+      slider stays usable instead of matching most of the screen near the top.
+      Reds are handled across the hue wrap automatically.</div>
   </div>
 
   <div class="card s4" data-tab="aim" style="animation-delay:.24s"><h2><span class="ico">☰</span>Body aim</h2>
@@ -621,16 +685,38 @@ PAGE = r"""<!doctype html>
   </div>
 
   <div class="card s4" data-tab="detect" style="animation-delay:.27s"><h2><span class="ico">▣</span>Detection area</h2>
-    <div class="hint" style="margin-bottom:6px">Only look for colors inside this
-      pixel box. X / Y / W / H — 0&nbsp;0&nbsp;0&nbsp;0 = whole frame.</div>
-    <div class="fields">
-      <input class="txt" id="roi_x" placeholder="X"><input class="txt" id="roi_y" placeholder="Y">
-      <input class="txt" id="roi_w" placeholder="W"><input class="txt" id="roi_h" placeholder="H">
-    </div>
-    <div class="btns">
-      <button class="btn accent" onclick="applyRoi()">Apply</button>
+    <div class="hint" style="margin-bottom:8px">Only look for colors inside this
+      box — everything outside is ignored, which is faster and stops it picking
+      up things you don't mean.</div>
+    <div class="btns" style="margin-bottom:10px">
+      <button class="btn accent" onclick="pickRegion('roi')">◫ Select on screen</button>
+      <button class="btn" onclick="cropOpen()">🖼 Crop a screenshot</button>
       <button class="btn" onclick="clearRoi()">Full frame</button>
     </div>
+    <div class="roi-now" id="roiNow">—</div>
+    <div id="cropWrap" style="display:none;margin:10px 0">
+      <div class="hint" style="margin:0 0 8px">Drag a box over the part to
+        watch. <b id="cropHint">—</b></div>
+      <div class="cropbox" id="cropBox">
+        <canvas id="cropCv"></canvas>
+        <div class="cropsel" id="cropSel"></div>
+      </div>
+      <div class="btns" style="margin-top:8px">
+        <button class="btn" onclick="cropGrab()">↻ Retake</button>
+        <button class="btn" onclick="cropClose()">Close</button>
+      </div>
+    </div>
+    <div class="toggle"><span>Show the area on screen<br>
+      <small>dashed outline over the desktop</small></span>
+      <label class="switch"><input type="checkbox" data-key="show_roi">
+      <span class="track"></span></label></div>
+    <details class="adv"><summary>Type exact numbers</summary>
+      <div class="quad">
+        <input class="txt" id="roi_x" placeholder="X"><input class="txt" id="roi_y" placeholder="Y">
+        <input class="txt" id="roi_w" placeholder="W"><input class="txt" id="roi_h" placeholder="H">
+      </div>
+      <div class="btns"><button class="btn" onclick="applyRoi()">Apply</button></div>
+    </details>
   </div>
 
   <div class="card s6" data-tab="detect" style="animation-delay:.3s"><h2><span class="ico">🖵</span>Capture source</h2>
@@ -790,8 +876,84 @@ function applyCapture(){act('apply_capture',{
   width:+$('#cap_width').value||0, height:+$('#cap_height').value||0}).then(()=>flash('capture applied'));}
 function applyRoi(){act('apply_roi',{
   roi_x:+$('#roi_x').value||0, roi_y:+$('#roi_y').value||0,
-  roi_w:+$('#roi_w').value||0, roi_h:+$('#roi_h').value||0}).then(()=>flash('detection area applied'));}
+  roi_w:+$('#roi_w').value||0, roi_h:+$('#roi_h').value||0})
+  .then(()=>{flash('detection area applied');load();});}
 function clearRoi(){['roi_x','roi_y','roi_w','roi_h'].forEach(id=>$('#'+id).value=0);applyRoi();}
+
+/* ---- detection area ------------------------------------------------------
+   Two ways to say where to look, because typing four desktop-pixel numbers
+   means knowing where a window is before you can describe it:
+   * "Select on screen" dims the desktop and takes a dragged box, the way a
+     screen-capture tool does. Handled by the engine, since only it can draw
+     over other windows.
+   * "Crop a screenshot" drags the same box over a frozen frame in the panel,
+     for when reaching across the screen is the hard part. */
+function pickRegion(what){
+  act('pick_region',{what}).then(()=>flash(
+    'drag a box on the screen — Esc cancels'));
+}
+
+let cropImg=null, cropDrag=null;
+async function cropGrab(){
+  $('#cropHint').textContent='grabbing…';
+  try{
+    const r=await fetch('/api/screenshot?t='+Date.now());
+    if(!r.ok){$('#cropHint').textContent='capture failed — check Capture source';return;}
+    const img=new Image();
+    img.onload=()=>{
+      cropImg=img;
+      const cv=$('#cropCv');cv.width=img.width;cv.height=img.height;
+      cv.getContext('2d').drawImage(img,0,0);
+      $('#cropHint').textContent=img.width+'×'+img.height+' — drag to crop';
+      drawCropSel();
+    };
+    img.src=URL.createObjectURL(await r.blob());
+  }catch(e){$('#cropHint').textContent='capture failed';}
+}
+function cropOpen(){$('#cropWrap').style.display='';cropGrab();}
+function cropClose(){$('#cropWrap').style.display='none';cropImg=null;}
+/* Frame pixels -> displayed pixels. The canvas is scaled to the card width, so
+   every coordinate has to cross that ratio in one direction or the other. */
+function cropScale(){const cv=$('#cropCv');
+  return cv.width? cv.getBoundingClientRect().width/cv.width : 1;}
+function drawCropSel(){
+  const sel=$('#cropSel'), k=cropScale();
+  const w=+S.roi_w||0, h=+S.roi_h||0;
+  if(!cropImg||w<=0||h<=0){sel.style.display='none';return;}
+  sel.style.display='';
+  sel.style.left=((+S.roi_x||0)*k)+'px'; sel.style.top=((+S.roi_y||0)*k)+'px';
+  sel.style.width=(w*k)+'px'; sel.style.height=(h*k)+'px';
+}
+(function wireCrop(){
+  const box=$('#cropBox'), sel=$('#cropSel');
+  const at=e=>{const r=$('#cropCv').getBoundingClientRect();
+    return [e.clientX-r.left, e.clientY-r.top];};
+  box.addEventListener('pointerdown',e=>{
+    if(!cropImg)return;
+    box.setPointerCapture(e.pointerId);
+    cropDrag=at(e); sel.style.display='';
+    sel.style.left=cropDrag[0]+'px';sel.style.top=cropDrag[1]+'px';
+    sel.style.width='0px';sel.style.height='0px';
+  });
+  box.addEventListener('pointermove',e=>{
+    if(!cropDrag)return;
+    const [x,y]=at(e);
+    sel.style.left=Math.min(cropDrag[0],x)+'px';
+    sel.style.top=Math.min(cropDrag[1],y)+'px';
+    sel.style.width=Math.abs(x-cropDrag[0])+'px';
+    sel.style.height=Math.abs(y-cropDrag[1])+'px';
+  });
+  box.addEventListener('pointerup',e=>{
+    if(!cropDrag)return;
+    const [x,y]=at(e), k=cropScale(), s=cropDrag; cropDrag=null;
+    const x0=Math.min(s[0],x)/k, y0=Math.min(s[1],y)/k;
+    const w=Math.abs(x-s[0])/k, h=Math.abs(y-s[1])/k;
+    if(w<6||h<6){drawCropSel();flash('too small — drag a bigger box');return;}
+    $('#roi_x').value=Math.round(x0);$('#roi_y').value=Math.round(y0);
+    $('#roi_w').value=Math.round(w); $('#roi_h').value=Math.round(h);
+    applyRoi();
+  });
+})();
 function applyHotkeys(){act('apply_hotkeys',{show:$('#hk_show').value.trim(),
   pull:$('#hk_pull').value.trim(), trigger:$('#hk_trigger').value.trim()})
   .then(()=>flash('hotkeys applied'));}
@@ -887,9 +1049,36 @@ function render(){
       (want>hz?` — above that, scans re-read frames the screen hasn't redrawn yet.`:`.`)
     : `<b>Auto</b>: matching your display's <b>${hz} Hz</b> · achieving `+
       `<b>${got}/s</b>. Plug in a faster monitor and this follows it.`;
-  const g=S.pointer_gain_measured;
-  $('#gainNow').textContent=(g==null?'—':(g.toFixed(2)+'×'+(g<0.75?
-    '  (low sensitivity — being compensated)':'')));
+  const g=S.pointer_gain_measured, res=S.pointer_resolution||1;
+  $('#gainNow').textContent=(g==null?'—':(g.toFixed(2)+'× per unit'));
+  const pp=$('#ptrProfile');
+  if(pp) pp.textContent=S.pointer_profile||'reading…';
+  // At a high pointer speed one device unit is several pixels, so the pointer
+  // physically cannot be placed closer than that. Saying so beats leaving it
+  // looking like the aim is simply inaccurate.
+  const pr=$('#ptrRes');
+  if(pr) pr.innerHTML = res>2.0
+    ? `One step of your mouse moves <b>${res.toFixed(1)} px</b>, so the pointer `+
+      `settles within about that — the finest a high pointer speed allows.`
+    : `One step of your mouse moves <b>${res.toFixed(2)} px</b> — fine enough `+
+      `to land exactly on target.`;
+  // Detection area readout.
+  const rn=$('#roiNow');
+  if(rn) rn.innerHTML = (S.roi_w>0&&S.roi_h>0)
+    ? `Watching <b>${S.roi_w} × ${S.roi_h}</b> px at <b>${S.roi_x}, ${S.roi_y}</b>`
+    : `Watching the <b>whole frame</b>`;
+  if(S.region_pick) flash('drag a box on the screen — Esc cancels');
+  drawCropSel();
+  // Colour-match coverage: a selection loose enough to match most of the
+  // screen produces confident, meaningless targets.
+  const cov=S.mask_coverage, cv=$('#covNow');
+  if(cv){
+    cv.innerHTML = (cov==null)?'—':
+      (cov>25 ? `<b style="color:#ff9a8a">${cov}% of the frame matches</b> — `+
+                `too much to aim at. Lower Sensitivity, or pick a colour that `+
+                `stands out more.`
+              : `<b>${cov}%</b> of the frame matches your colours.`);
+  }
   const st=$('#statTarget');
   st.textContent=S.target_found?'locked':'none';
   st.className='v '+(S.target_found?'ok':'bad');
@@ -915,6 +1104,13 @@ function render(){
   $('#intervalRow').style.display=(cm==='dwell'&&S.click_repeat)?'':'none';
   $('#triggerRow').style.display=(cm==='trigger')?'':'none';
   $('#snapRow').style.display=S.snap_to_best?'':'none';
+  const sh2=$('#snapHint');
+  if(sh2) sh2.innerHTML = (S.snap_radius>0)
+    ? `Fixed <b>${S.snap_radius} px</b> circle. Slide to <b>0</b> to size it `+
+      `from the target instead, which suits targets of changing size.`
+    : `<b>Auto</b> — sized from the target itself (about a third of its narrow `+
+      `side). This used to borrow the field-of-view circle, which was far too `+
+      `big and dragged the aim toward whatever else was nearby.`;
   $('#clickHint').textContent=cm==='dwell'?'Clicks after holding on target.':
     cm==='trigger'?'Press the trigger key to click instantly.':
     'No auto-click — click manually.';
@@ -945,20 +1141,44 @@ const TIPS={
   precision_px:"How close to the target the pointer starts slowing down, so it settles gently instead of darting the last bit. Set 0 to turn off.",
   precision_slow:"How much it slows inside that zone. Lower is gentler and more precise, but takes a moment longer to arrive.",
   max_accel:"A limit on how sharply the pointer can speed up. Stops it lurching if the camera has a bad moment. Lower = calmer.",
-  pointer_gain:"Only needed if the pointer still comes up short. The app measures your mouse speed by itself first — try leaving this alone.",
+  pointer_gain:"Only needed if the pointer still comes up short. The app reads your Windows mouse speed by itself first — try leaving this alone. Higher reaches further, lower reaches less.",
+  pointer_gain_auto:"Read your Windows mouse speed and acceleration, and keep checking what your moves actually do. Leave this on — it is what keeps the pull the same on a slow mouse and a fast one.",
+  show_roi:"Draw a dashed outline on screen showing the area being watched, so you can see it rather than work it out from numbers.",
+  snap_radius:"How big a circle to look for the densest colour in. Leave at 0 to size it from the target automatically.",
   dwell_ms:"How long to rest on something before it clicks for you.",
   click_radius:"How close the pointer must be to count as resting on the target. Bigger is more forgiving.",
   click_interval_ms:"When repeat clicking is on, the gap between each click.",
   dwell_grace_ms:"If the colour flickers for a moment, keep counting instead of starting over. Raise it if clicks don't happen on a jumpy picture.",
-  sensitivity:"How fussy colour matching is. Raise it if your target isn't spotted; lower it if it grabs the wrong things.",
+  sensitivity:"How fussy colour matching is. Raise it if your target isn't spotted; lower it if it grabs the wrong things. Watch the percentage below — if it climbs past about a quarter of the frame, it is matching too much to aim at.",
   min_contour_area:"Ignore colour patches smaller than this, so specks and noise don't get chased.",
   detect_scale:"Detection quality vs effort. Lower is lighter on the computer; higher spots smaller things.",
   scan_fps:"How many times a second the screen is checked. Leave at 0 to match your monitor automatically — a screen can't show new pictures faster than its refresh rate, so scanning above it just sees the same picture twice. Set a number to cap it and free up the computer, or to go higher if you capture from OBS rather than the screen.",
   pull_radius:"The pointer is only guided toward colours inside this circle. Everything outside is ignored.",
   overlay_radius:"Just the size of the circle drawn on screen. Doesn't change behaviour.",
-  snap_after_ms:"After resting on the colour this long, aim shifts to the middle of the thickest part. Set 0 to do it straight away — better for things that keep moving.",
+  snap_after_ms:"After resting on the colour this long, aim shifts to the thickest part of that target. Set 0 to do it straight away — better for things that keep moving.",
   part_attraction:"How strictly it aims at the exact body part. Lower blends toward the middle of the figure, which is steadier.",
 };
+/* The bubble lives on <body> and is positioned at hover time. Cards clip their
+   contents, so anchoring it inside one cut it off; and the panel is fluid, so
+   the room available above/left/right of an icon is only known on hover. */
+function placeTip(i){
+  const t=$('#tip');
+  t.textContent=i.dataset.tip;
+  t.classList.add('on');
+  const r=i.getBoundingClientRect();
+  const tw=t.offsetWidth, th=t.offsetHeight, pad=8;
+  let left=r.left-4;
+  if(left+tw>innerWidth-pad) left=innerWidth-pad-tw;   // keep the right edge in
+  if(left<pad) left=pad;
+  let top=r.top-th-9;
+  if(top<pad) top=r.bottom+9;                          // no room above: go below
+  // Neither side fits for the tallest bubbles low on the page, so clamp into
+  // view as a last resort rather than letting one run off the bottom.
+  if(top+th>innerHeight-pad) top=innerHeight-pad-th;
+  if(top<pad) top=pad;
+  t.style.left=left+'px';
+  t.style.top=top+'px';
+}
 function attachTips(){
   document.querySelectorAll('[data-key]').forEach(el=>{
     const tip=TIPS[el.dataset.key];if(!tip)return;
@@ -966,16 +1186,12 @@ function attachTips(){
     const host=row.querySelector('label,span');
     if(!host||host.querySelector('.i'))return;
     const i=document.createElement('span');
-    i.className='i';i.textContent='i';i.setAttribute('data-tip',tip);
+    i.className='i';i.textContent='i';i.dataset.tip=tip;
     // Whitespace first, so the label can wrap between text and bubble rather
     // than being forced into one over-wide unbreakable run.
     host.appendChild(document.createTextNode(' '));
-    // Decide the open direction at hover time, not at build time: the panel is
-    // fluid, so an icon's distance from the right edge changes with the window.
-    i.addEventListener('mouseenter',()=>{
-      const w=Math.min(250,innerWidth*0.6);
-      i.classList.toggle('flip',i.getBoundingClientRect().left-4+w>innerWidth-8);
-    });
+    i.addEventListener('mouseenter',()=>placeTip(i));
+    i.addEventListener('mouseleave',()=>$('#tip').classList.remove('on'));
     host.appendChild(i);
   });
 }
@@ -984,6 +1200,14 @@ function attachTips(){
    Kept here so the panel is the single place a user looks; each entry says
    what changed in terms of what they would have noticed. */
 const NOTES=[
+ {v:"1.0.7",t:"Snap fixed, any mouse sensitivity, drag-a-box area",items:[
+   ["Best-coverage snap no longer ruins the aim","The snap circle was borrowing your field-of-view circle — 250px across by default — so it was answering 'where is this colour thickest' about half the screen instead of about your target. With two figures 220px apart it settled 47px off the one you were locked on, and at some spacings it aimed between the two, at neither. It now only looks inside the target it is already locked on, so it can never walk onto something else, and it has its own size setting that works itself out from the target by default."],
+   ["Works the same on a fast mouse and a slow one","Windows shrinks or stretches every movement by your mouse-speed setting — from a thirty-second up to three and a half times — and 'enhance pointer precision' changes that again depending on how fast the pointer is already moving. It now reads those settings directly instead of guessing and correcting, so the very first movement is the right size. Wasted back-and-forth travel at the highest setting dropped from 96% down to 2%, and the shaking on arrival is gone at both ends."],
+   ["Extra gain was backwards","The slider that says 'raise this if it still under-reaches' was making it reach less, not more."],
+   ["The top half of the Sensitivity slider was unusable","Past about 24 it matched anything roughly the right colour no matter how washed out or nearly black — over half the screen at 28, and above 36 your actual target disappeared into the mess. The whole slider works now, and the panel tells you what percentage of the screen your colours are matching."],
+   ["Pick the detection area by dragging a box","Instead of typing four numbers, 'Select on screen' dims the desktop and lets you drag over the part you want watched, like a snipping tool. It shows the size as you drag, Esc cancels, and it works across several monitors. You can also crop a screenshot inside the panel, and the area is outlined on screen so you can see it."],
+   ["Numbers were off the edge of the panel","Every slider's value was 94px past the right edge of its card and cut off — sliders refuse to shrink past a certain width, so the row simply did not fit. Each row is now two lines: name and value on top, slider underneath. Checked at every window size from 400px to 1600px."],
+ ]},
  {v:"1.0.6",t:"Five times faster searching, and a tidier panel",items:[
    ["Much faster when looking for a target","Before locking on, it was grabbing the whole screen every time — about 67ms — so it only managed around 10 checks a second no matter what the scan rate said. It now only looks at the area around your pointer, since anything outside the circle is ignored anyway. Measured 10 → 52 checks a second."],
    ["The 'Detection' number now says when it's idle","A low number with guidance switched off is the deliberate slow tick, not a fault. It now says 'idle' so it doesn't look broken."],

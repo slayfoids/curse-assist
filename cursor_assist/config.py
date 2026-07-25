@@ -15,6 +15,32 @@ from typing import List, Tuple
 # The named body regions exposed as selectable targets in the UI.
 REGIONS = ["Head", "Torso", "L-Arm", "R-Arm", "L-Leg", "R-Leg", "Feet"]
 
+# Sensitivity slider bounds, shared by the UI and the tolerance mapping below.
+SENSITIVITY_MIN = 2
+SENSITIVITY_MAX = 45
+
+
+def tolerances_for(sensitivity: int) -> Tuple[int, int, int]:
+    """HSV tolerances for one point on the Sensitivity slider.
+
+    Hue is the channel that actually says *which colour* a pixel is, so raising
+    sensitivity opens it up generously. Saturation and value are what separate
+    the colour from grey and from black, and they stay bounded.
+
+    The old mapping widened all three at ``tol * 8``, which saturated both at
+    255 by two thirds of the way along the slider — every pixel with roughly
+    the right hue then matched regardless of how washed out or how nearly black
+    it was. Measured on a cluttered frame, sensitivity 28 matched 55% of the
+    screen across 606 blobs, and past 36 the real target stopped being found at
+    all: it had merged into the flood. That is the "struggles on a higher
+    sensitivity" behaviour — the top half of the slider was unusable.
+    """
+    t = max(SENSITIVITY_MIN, min(SENSITIVITY_MAX, int(sensitivity)))
+    h_tol = int(round(3 + t * 0.85))
+    s_tol = int(round(30 + t * 3.0))
+    v_tol = int(round(25 + t * 2.6))
+    return h_tol, min(255, s_tol), min(255, v_tol)
+
 
 @dataclass
 class ColorTarget:
@@ -177,6 +203,14 @@ class AppState:
     roi_y: int = 0
     roi_w: int = 0
     roi_h: int = 0
+    # Draw the detection area on screen so it can be seen rather than inferred
+    # from four numbers.
+    show_roi: bool = True
+    # Set to "roi" or "capture" to ask for the drag-a-box screen picker; the
+    # component owning the Tk main loop notices, runs it, and clears this back
+    # to "". A request rather than a call because Tk will only build windows on
+    # the thread that owns its loop, and the web server runs on another one.
+    region_pick: str = ""
 
     # --- Targeting stability ---------------------------------------------
     # Lock onto one blob and keep pulling toward it until it disappears,
@@ -193,10 +227,21 @@ class AppState:
     # so a better target elsewhere can still be picked up.
     adaptive_roi: bool = True
     # After the cursor has been on the target color for snap_after_ms, aim at
-    # the position where a circle of the "circle size" radius (overlay_radius,
-    # falling back to pull_radius) covers the most target color.
+    # the position where a circle of snap_radius covers the most target color.
+    # The search is confined to the locked blob, so this refines the aim inside
+    # the current target and can never walk it onto a neighbouring one.
     snap_to_best: bool = True
     snap_after_ms: int = 1000
+    # Radius of that coverage circle, in screen px. 0 = size it from the target
+    # itself (about a third of its narrow side), which is the right default
+    # because the useful size depends on the target, not on the user's setup.
+    #
+    # This used to borrow the drawn FOV circle — 250 px by default — so "where
+    # is the color densest" was answered about a 500 px-wide patch of screen
+    # rather than about the target. With two figures 220 px apart the aim
+    # settled 47 px off the locked one; at some spacings it landed between the
+    # two, aimed at neither.
+    snap_radius: int = 0
 
     # --- Region selection ------------------------------------------------
     # Off = just track the color directly. On = split the figure into body
@@ -238,7 +283,14 @@ class AppState:
     display_hz: float = 60.0         # detected refresh rate (read-only)
     last_target_found: bool = False
     pointer_gain_measured: float = 1.0   # learned OS pointer gain (read-only)
+    pointer_profile: str = ""            # e.g. "6/11 (1x) + enhance precision"
+    pointer_resolution: float = 1.0      # px per device unit (read-only)
     roi_following: bool = False          # adaptive ROI active right now
+    # Percentage of the scanned area matching the target colors. A colour
+    # selection loose enough to match most of the screen produces confident,
+    # meaningless targets, so this is surfaced rather than left to be guessed
+    # at from the pointer behaving strangely.
+    mask_coverage: float = 0.0
 
     # Convenience helpers so callers don't have to remember the lock -------
     def get(self, name: str):

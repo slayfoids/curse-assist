@@ -37,6 +37,7 @@ SCAN_HZ_MAX = 1000.0
 DISPLAY_HZ_RECHECK_S = 3.0  # re-read the refresh rate this often, so plugging
                             # in a different monitor is picked up while running
 TARGET_STALE_S = 0.25      # ignore targets older than this
+GAIN_PUBLISH_S = 0.5       # how often pointer calibration is reported to the UI
 
 # Pursuit easing. Below the knee the easing constant is untouched, so a resting
 # or slow target keeps the full smooth, precise feel. Above it the constant
@@ -101,6 +102,7 @@ class AssistController:
         self._target_at = 0.0
         self._target_speed = 0.0  # px/s, set by detection, read by movement
         self._last_trigger = 0.0  # cooldown for the instant trigger click
+        self._gain_published = 0.0
 
         self._capture = None
         self._capture_key = None
@@ -321,11 +323,10 @@ class AssistController:
                 shapes, mask = find_shapes(small, snap.colors,
                                            snap.detect_thin_border, min_area)
                 figure = largest_figure(shapes)
+                if mask.size:
+                    self._state.set("mask_coverage", round(
+                        100.0 * float(cv2.countNonZero(mask)) / mask.size, 1))
 
-                # "Circle size" drives the max-coverage snap; it falls back to
-                # the pull radius when the drawn circle matches it (0).
-                snap_r = (snap.overlay_radius if snap.overlay_radius > 0
-                          else snap.pull_radius)
                 target = self._tracker.pick(
                     shapes=shapes, figure=figure,
                     active_region=snap.active_region,
@@ -337,7 +338,7 @@ class AssistController:
                     mask=mask,
                     lock_enabled=snap.lock_target,
                     snap_enabled=snap.snap_to_best,
-                    snap_radius=snap_r,
+                    snap_radius=snap.snap_radius,
                     snap_after_ms=snap.snap_after_ms,
                     part_attraction=snap.part_attraction,
                 )
@@ -395,6 +396,20 @@ class AssistController:
             enabled = self._state.get("pull_enabled")
             target = self._read_target() if enabled else None
 
+            # Pointer calibration describes the machine, not the pull, so it is
+            # published whether or not one is running — otherwise the panel had
+            # nothing to show until guidance was switched on, which is exactly
+            # when someone is checking whether their sensitivity is understood.
+            if now - self._gain_published > GAIN_PUBLISH_S:
+                self._gain_published = now
+                self._glider.curve.refresh(now)
+                self._state.set("pointer_gain_measured",
+                                round(self._glider.gain, 3))
+                self._state.set("pointer_resolution",
+                                round(self._glider.resolution_px, 2))
+                self._state.set("pointer_profile",
+                                self._glider.curve.settings.describe())
+
             # Physical-mouse suppression: only while actually pulling a target.
             want_suppress = bool(enabled and target is not None
                                  and self._state.get("suppress_mouse"))
@@ -439,8 +454,6 @@ class AssistController:
                 gain_scale=float(self._state.get("pointer_gain")),
                 auto_gain=bool(self._state.get("pointer_gain_auto")),
             )
-            self._state.set("pointer_gain_measured",
-                            round(self._glider.gain, 3))
             self._dwell.update(
                 cursor_screen=cursor_pos,
                 target_screen=target,

@@ -20,9 +20,14 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-from .config import REGIONS, AppState, CaptureConfig, ColorTarget
+from .config import (REGIONS, AppState, CaptureConfig, ColorTarget,
+                     tolerances_for)
 
-SETTINGS_VERSION = 1
+# 2: colour tolerances are derived from Sensitivity by config.tolerances_for.
+# Files written by version 1 carry tolerances from the old mapping, which
+# saturated saturation and value at 255 over the top half of the slider and
+# matched most of the screen; they are recomputed on load rather than restored.
+SETTINGS_VERSION = 2
 
 # Unambiguous alphabet (no 0/O/1/I/L) for the random config codes.
 _CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
@@ -54,12 +59,14 @@ _SCALAR_FIELDS = (
     "roi_y",
     "roi_w",
     "roi_h",
+    "show_roi",
     "lock_target",
     "adaptive_roi",
     "show_aim_line",
     "dwell_grace_ms",
     "snap_to_best",
     "snap_after_ms",
+    "snap_radius",
     "body_part_detection",
     "active_region",
     "part_attraction",
@@ -127,6 +134,13 @@ def apply_dict(state: AppState, data: dict) -> None:
                 )
                 for c in colors
             ]
+            # Pre-v2 files store tolerances from the old mapping. Restoring
+            # them verbatim would carry the flooding fault across the upgrade,
+            # so they are rebuilt from the Sensitivity the user actually set.
+            if int(data.get("version", 1)) < 2:
+                h_tol, s_tol, v_tol = tolerances_for(state.sensitivity)
+                for c in state.colors:
+                    c.h_tol, c.s_tol, c.v_tol = h_tol, s_tol, v_tol
 
         cap = data.get("capture")
         if isinstance(cap, dict):

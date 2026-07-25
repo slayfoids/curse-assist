@@ -9,6 +9,73 @@ tell which build you are running.
 
 ---
 
+## v1.0.7
+
+**Best-coverage snap fixed, sensitivity handled at both extremes, a
+drag-a-box detection area, and every number back on screen.**
+
+- **Best-coverage snap no longer drags the aim onto whatever is nearby.** The
+  snap circle borrowed the field-of-view circle — 250 px by default — so "where
+  is this colour densest" was answered about a 500 px-wide patch of screen
+  rather than about the target. Measured with two figures 220 px apart, the aim
+  settled **47 px off** the locked one, and at some spacings landed *between*
+  the two, pointing at neither. The search is now confined to the locked blob,
+  so it refines the aim inside the current target and cannot walk to a
+  different one, and it has its own **Snap circle** setting that defaults to
+  sizing itself from the target. Same scene now: **≤ 5 px at every radius**,
+  while still moving the aim 43 px onto the torso of a figure whose centroid
+  was dragged off by a trailing limb.
+  - It also declines to act when the circle is bigger than the area being
+    searched. Every placement scores alike there, the winner is decided by
+    floating-point noise, and it was adding a constant ~8 px diagonal bias
+    whenever target-follow shrank the scanned window.
+- **Pointer sensitivity: both ends of the slider, not just the low one.**
+  Windows scales movement by the pointer-speed setting (1/32× to 3.5×) and
+  bends it further with "enhance pointer precision", which makes the scaling
+  depend on how fast the pointer is already moving — something a single learned
+  number cannot represent. The engine now **reads both settings** and models the
+  gain as a curve, so the first move is already the right size instead of being
+  learned from a wrong start. Measured against a simulated input path across
+  the full range:
+  - travel wasted on hunting: **1.96× → 1.02×** at the highest setting;
+  - resting jitter: **72.9 px → 0** at the lowest, **5.4 px → 0** with
+    precision enhancement on, **1.0 px → 0** at the highest;
+  - overshoot: **0 px everywhere** (was 0.4–0.7 px);
+  - settling is faster in six of ten cases and unchanged in two. The two that
+    read slower were previously "arriving" by flying past the target — which is
+    what the 1.96× travel figure was.
+  - At a high pointer speed one step of the mouse moves several pixels, so the
+    pointer cannot be placed closer than that. It now settles there instead of
+    stepping back and forth across the target, and the panel says how fine it
+    can actually get.
+  - **Extra gain worked backwards.** It divided the requested distance instead
+    of multiplying it, so turning up the control labelled "raise this if it
+    still under-reaches" made it under-reach further.
+- **Detection sensitivity is usable across its whole range.** The mapping
+  widened hue, saturation and value together, pinning saturation and value at
+  maximum two thirds of the way along — past that, any pixel with roughly the
+  right hue matched however washed out or nearly black it was. On a cluttered
+  frame, sensitivity 28 matched **55% of the screen across 606 blobs**, and past
+  36 **the target stopped being found at all**. Hue now widens generously while
+  saturation and value stay bounded: the target is found at **every** setting
+  and coverage stays near 1%. The panel shows what percentage of the frame your
+  colours match, so a selection that is too loose is visible rather than
+  guessed at. Existing settings files are migrated.
+- **Detection area is now a drag-a-box tool.** "Select on screen" dims the
+  desktop and takes a dragged rectangle the way a screen-capture tool does,
+  with a live size readout, Escape to cancel, and multi-monitor support. There
+  is also "Crop a screenshot" for cropping a frozen frame inside the panel, and
+  the area is drawn on the desktop so you can see what is being watched. Typing
+  four numbers still works, tucked under "Type exact numbers".
+- **Every value is back on screen.** A range input keeps an intrinsic width of
+  about 129 px and `flex:1` does not let it shrink below that, so each control
+  row demanded 355 px inside a 248 px card and the number on the end was cut
+  off by the card edge — **15 rows, each 94 px out of view**. Rows are now a
+  grid: label and value on one line, slider full width beneath. Verified at
+  every width from 400 px to 1600 px across all five tabs: **zero clipped
+  rows**. The help bubbles were being clipped by the same card edges and now
+  float above everything, staying inside the window at any size.
+
 ## v1.0.6
 
 **Searching for a target is ~5× faster, and the panel is grouped into tabs.**

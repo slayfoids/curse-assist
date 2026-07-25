@@ -21,7 +21,7 @@ from typing import Optional
 
 from . import persistence
 from . import __version__
-from .config import REGIONS, AppState, ColorTarget
+from .config import REGIONS, AppState, ColorTarget, tolerances_for
 from .controller import AssistController
 from . import holdwatch
 from .holdwatch import HoldWatcher
@@ -87,11 +87,15 @@ def _rgb_to_cv_hsv(r, g, b):
 
 class WebApp:
     def __init__(self, state: AppState, host: str = "127.0.0.1",
-                 port: int = 8756, open_browser: bool = True):
+                 port: int = 8756, open_browser: bool = True,
+                 has_overlay: bool = True):
         self.state = state
         self.host = host
         self.port = port
         self.open_browser = open_browser
+        # Whether something else is running a Tk main loop that can service a
+        # region-pick request (the crosshair overlay does).
+        self._has_overlay = has_overlay
         self.url = f"http://{host}:{port}/"
 
         self.controller = AssistController(
@@ -199,20 +203,20 @@ class WebApp:
             pass
 
     def _apply_sensitivity(self, tol: int) -> None:
+        h_tol, s_tol, v_tol = tolerances_for(tol)
         with self.state.lock:
             self.state.sensitivity = tol
             for c in self.state.colors:
-                c.h_tol = tol
-                c.s_tol = min(255, tol * 8)
-                c.v_tol = min(255, tol * 8)
+                c.h_tol = h_tol
+                c.s_tol = s_tol
+                c.v_tol = v_tol
 
     def _add_color_rgb(self, r, g, b) -> None:
         h, s, v = _rgb_to_cv_hsv(r, g, b)
-        tol = int(self.state.get("sensitivity"))
+        h_tol, s_tol, v_tol = tolerances_for(int(self.state.get("sensitivity")))
         with self.state.lock:
             self.state.colors.append(ColorTarget(
-                h=h, s=s, v=v, h_tol=tol,
-                s_tol=min(255, tol * 8), v_tol=min(255, tol * 8)))
+                h=h, s=s, v=v, h_tol=h_tol, s_tol=s_tol, v_tol=v_tol))
 
     # ------------------------------------------------------------ screenshot
     def screenshot_png(self) -> Optional[bytes]:
@@ -242,6 +246,39 @@ class WebApp:
                     cap.close()
                 except Exception:
                     pass
+
+    # --------------------------------------------------------- region picker
+    def _start_region_pick(self, what: str) -> None:
+        """Ask for the drag-a-box screen picker.
+
+        The overlay owns Tk's main loop and watches this flag, because Tk only
+        builds windows on the thread running its loop and this request arrives
+        on an HTTP worker. With ``--no-overlay`` there is no such loop, so a
+        private one is started on its own thread instead.
+        """
+        if self.state.get("region_pick"):
+            return          # one already in flight
+        self.state.set("region_pick", what)
+        if self._has_overlay:
+            return
+        threading.Thread(target=self._pick_region_standalone, args=(what,),
+                         name="region-pick", daemon=True).start()
+
+    def _pick_region_standalone(self, what: str) -> None:
+        from . import region_picker
+        titles = {"roi": "Drag to set the detection area",
+                  "capture": "Drag to set the capture region"}
+        try:
+            box = region_picker.pick_blocking(titles.get(what, ""))
+        except Exception as exc:
+            self._on_error(exc)
+            box = None
+        with self.state.lock:
+            self.state.region_pick = ""
+            if box is not None:
+                region_picker.apply_region(self.state, what, box)
+        if box is not None:
+            self._save()
 
     # ------------------------------------------------------------ eyedropper
     def _start_eyedrop(self) -> None:
@@ -438,6 +475,11 @@ class WebApp:
                 "display_hz": s.display_hz,
                 "roi_x": s.roi_x, "roi_y": s.roi_y,
                 "roi_w": s.roi_w, "roi_h": s.roi_h,
+                "show_roi": s.show_roi,
+                "region_pick": s.region_pick,
+                "mask_coverage": s.mask_coverage,
+                "pointer_profile": s.pointer_profile,
+                "pointer_resolution": s.pointer_resolution,
                 "detect_thin_border": s.detect_thin_border,
                 "pull_radius": s.pull_radius,
                 "show_overlay": s.show_overlay,
@@ -450,6 +492,7 @@ class WebApp:
                 "lock_target": s.lock_target,
                 "snap_to_best": s.snap_to_best,
                 "snap_after_ms": s.snap_after_ms,
+                "snap_radius": s.snap_radius,
                 "body_part_detection": s.body_part_detection,
                 "active_region": s.active_region,
                 "part_attraction": s.part_attraction,
@@ -557,6 +600,12 @@ class WebApp:
                             setattr(self.state, k, max(0, int(data[k])))
                         except (TypeError, ValueError):
                             pass
+        elif action == "pick_region":
+            what = data.get("what", "roi")
+            if what not in ("roi", "capture"):
+                what = "roi"
+            self._start_region_pick(what)
+            return {"ok": True, "picking": what}
         elif action == "apply_hotkeys":
             self.state.set("hotkey_show_panel",
                            data.get("show") or "right shift")

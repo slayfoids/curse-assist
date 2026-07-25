@@ -1,5 +1,6 @@
 """Tests for target locking, spasm guards, and the max-coverage snap."""
 
+import math
 import time
 
 import numpy as np
@@ -114,13 +115,127 @@ def test_best_circle_center_empty_mask_returns_none():
     assert best_circle_center(mask, 25.0, 25.0, 10.0) is None
 
 
+def test_best_circle_center_declines_when_the_circle_swallows_everything():
+    """A circle larger than the search region has no best position.
+
+    Every placement then covers the same pixels, the arg-max is decided by
+    floating-point noise, and the answer is an artefact. It showed up as a
+    constant ~8 px diagonal bias whenever target-follow shrank the scanned
+    window below the snap circle.
+    """
+    mask = np.zeros((220, 220), dtype=np.uint8)
+    mask[60:160, 90:130] = 255
+    assert best_circle_center(mask, 110.0, 110.0, 250.0) is None
+    # A sensible radius on the same mask still works.
+    assert best_circle_center(mask, 110.0, 110.0, 20.0) is not None
+
+
+def test_best_circle_center_stays_inside_the_bounds_it_is_given():
+    """The snap refines within one target; it must not wander to a better one."""
+    mask = np.zeros((320, 460), dtype=np.uint8)
+    mask[100:190, 100:190] = 255      # the locked blob, 90x90 at (100, 100)
+    mask[70:260, 250:430] = 255       # a much denser neighbour to the right
+    box = (100, 100, 90, 90)
+
+    # Given a circle big enough to see past the blob, the free search walks off
+    # it and onto the neighbour...
+    free = best_circle_center(mask, 145.0, 145.0, 130.0)
+    assert free is not None and free[0] > 190
+
+    # ...while the bounded one stays on the target, at every radius.
+    for radius in (20, 45, 80, 130, 200):
+        held = best_circle_center(mask, 145.0, 145.0, float(radius), bounds=box)
+        if held is None:
+            continue                  # circle too big to have an optimum at all
+        margin = radius * targeting.SNAP_BOUND_MARGIN
+        assert box[0] - margin <= held[0] <= box[0] + box[2] + margin
+        assert box[1] - margin <= held[1] <= box[1] + box[3] + margin
+
+
+def test_snap_does_not_drag_the_aim_toward_a_neighbouring_target():
+    """The regression that made the feature unusable.
+
+    The snap circle used to be the field-of-view circle — 250 px by default —
+    so "where is this colour densest" was answered about a 500 px-wide patch of
+    screen rather than about the target. With two figures 220 px apart the aim
+    settled 47 px off the locked one, and at some spacings landed between the
+    two, pointing at neither.
+    """
+    scale = 0.5
+    mask = np.zeros((450, 700), dtype=np.uint8)
+    mask[200:290, 190:230] = 255      # locked target,  centre det (210, 245)
+    mask[200:290, 300:340] = 255      # neighbour,      centre det (320, 245)
+    shapes = [blob(190, 200, 40, 90), blob(300, 200, 40, 90)]
+    want = (420, 490)                 # the locked target, in screen px
+
+    for radius in (0, 30, 150, 250, 400):
+        t = TargetTracker(ema=1.0)
+        out = t.pick(shapes=shapes, figure=None, active_region="Torso",
+                     cursor_screen=want, capture_origin=(0, 0), scale=scale,
+                     mask=mask, snap_enabled=True, snap_radius=radius,
+                     snap_after_ms=0, lock_enabled=True)
+        assert abs(out[0] - want[0]) <= 12, (radius, out)
+        assert abs(out[1] - want[1]) <= 12, (radius, out)
+
+
+def test_snap_still_moves_the_aim_onto_the_densest_part():
+    """Confining it must not turn it into a no-op."""
+    scale = 0.5
+    mask = np.zeros((400, 400), dtype=np.uint8)
+    mask[100:160, 100:180] = 255      # torso block
+    mask[160:260, 100:110] = 255      # thin leg, which drags the centroid down
+    shapes = [blob(100, 100, 80, 160)]
+    kw = dict(figure=None, active_region="Torso", capture_origin=(0, 0),
+              scale=scale, mask=mask, snap_after_ms=0, lock_enabled=True,
+              snap_radius=0)
+    cursor = (280, 360)
+    plain = TargetTracker(ema=1.0).pick(shapes=shapes, cursor_screen=cursor,
+                                        snap_enabled=False, **kw)
+    snapped = TargetTracker(ema=1.0).pick(shapes=shapes, cursor_screen=cursor,
+                                          snap_enabled=True, **kw)
+    torso = (140 / scale, 130 / scale)
+    before = math.hypot(plain[0] - torso[0], plain[1] - torso[1])
+    after = math.hypot(snapped[0] - torso[0], snapped[1] - torso[1])
+    assert after < before - 20        # meaningfully closer to the mass
+
+
+def test_auto_snap_radius_scales_with_the_target():
+    """Radius 0 sizes the circle from the blob, not from the user's FOV."""
+    scale = 1.0
+    mask = np.zeros((600, 600), dtype=np.uint8)
+    for box, expect in (((100, 100, 40, 90), 40 * 0.32),
+                        ((100, 100, 160, 300), 160 * 0.32)):
+        x, y, w, h = box
+        mask[:] = 0
+        mask[y:y + h, x:x + w] = 255
+        t = TargetTracker(ema=1.0)
+        t.pick(shapes=[blob(x, y, w, h)], figure=None, active_region="Torso",
+               cursor_screen=(x + w // 2, y + h // 2), capture_origin=(0, 0),
+               scale=scale, mask=mask, snap_enabled=True, snap_radius=0,
+               snap_after_ms=0, lock_enabled=True)
+        assert abs(t._snap_radius_used - expect) < 1.0
+
+
+def test_snap_is_skipped_when_no_blob_was_matched_this_frame():
+    """With nothing detected there is no target to refine against."""
+    t = TargetTracker(ema=1.0)
+    mask = np.zeros((400, 400), dtype=np.uint8)
+    mask[90:170, 90:170] = 255
+    shapes = [blob(90, 90, 80, 80)]
+    kw = dict(mask=mask, snap_enabled=True, snap_radius=20, snap_after_ms=0)
+    pick(t, shapes, (100, 100), **kw)
+    assert t._lock_box is not None
+    pick(t, [], (100, 100), **kw)     # blob vanishes, lock held within grace
+    assert t._lock_box is None
+
+
 def test_snap_engages_after_dwelling_on_color():
     t = TargetTracker(ema=1.0)
     mask = np.zeros((400, 400), dtype=np.uint8)
     mask[90:170, 90:170] = 255        # 80x80 color block, center (130, 130)
     shapes = [blob(90, 90, 80, 80)]
     kw = dict(mask=mask, snap_enabled=True, snap_radius=30, snap_after_ms=1000)
-    # Cursor sits on the color; before 1s the target is the bbox center.
+    # Cursor sits on the color; before 1s the target is the bbox centroid.
     out = pick(t, shapes, (100, 100), **kw)
     assert out == (130, 130)
     # Fake 1s of on-color dwell: snap activates and aims at max coverage,

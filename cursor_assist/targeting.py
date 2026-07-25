@@ -97,6 +97,28 @@ LOCK_GRACE_S = 0.40      # keep aiming at a vanished target this long before
 SNAP_OFF_GRACE_S = 0.30  # brief mask flicker doesn't reset the on-color timer
 SNAP_MAX_KERNEL_R = 16   # downscale the search so the kernel stays this small
 
+# The snap circle is sized from the target itself when left on "auto". Its job
+# is to find the meatiest part *of the thing being aimed at* — a torso rather
+# than a trailing limb — so it scales with the blob's narrow dimension. A circle
+# any larger stops measuring the target and starts measuring the neighbourhood.
+SNAP_AUTO_FRAC = 0.32    # of the blob's shorter side
+SNAP_AUTO_MIN = 7        # px, screen space
+SNAP_AUTO_MAX = 70
+
+# How far outside the locked blob the snap may look and land. The search needs a
+# little margin so a circle can sit over an edge, but the *result* is clamped
+# into the blob: refining the aim within the current target is the entire point,
+# and any answer outside it is a re-target the lock explicitly forbids.
+SNAP_SEARCH_MARGIN = 1.0   # x radius
+SNAP_BOUND_MARGIN = 0.35   # x radius
+
+# A snap only means something if some placements are better than others. When
+# the circle swallows the whole search region every position scores alike, the
+# arg-max is decided by floating-point noise, and the "best" spot it reports is
+# an artefact — measured as a constant ~8 px diagonal bias while target-follow
+# was on. Below this spread the snap declines to move the aim at all.
+SNAP_MIN_CONTRAST = 0.06   # (max - min) / max of the coverage score
+
 _kernel_cache: Dict[int, np.ndarray] = {}
 
 
@@ -115,6 +137,7 @@ def best_circle_center(
     cx: float,
     cy: float,
     radius: float,
+    bounds: Optional[Tuple[float, float, float, float]] = None,
 ) -> Optional[Tuple[float, float]]:
     """Center of the ``radius`` circle that covers the most mask pixels.
 
@@ -122,15 +145,30 @@ def best_circle_center(
     The search runs on a downscaled crop so even large circles stay cheap. Ties
     and near-ties are broken toward the current position so the snap point
     doesn't oscillate between equally-good centers.
+
+    ``bounds`` is an optional ``(x, y, w, h)`` box the search and the answer are
+    both confined to — normally the locked blob. Without it the coverage
+    optimum is free to be a *different* target: with the shipped default the
+    circle was as wide as the whole field of view, so on two figures 220 px
+    apart the aim settled 47 px off the locked one, and on some spacings landed
+    between the two, on neither. Confining it makes the snap what it claims to
+    be, a refinement of the aim inside the current target.
     """
     h, w = mask.shape[:2]
     if h == 0 or w == 0 or radius <= 0:
         return None
-    search = radius * 1.5 + 4
+    search = radius * SNAP_SEARCH_MARGIN + 4
     x0 = max(0, int(cx - search))
     x1 = min(w, int(cx + search) + 1)
     y0 = max(0, int(cy - search))
     y1 = min(h, int(cy + search) + 1)
+    if bounds is not None:
+        bx0, by0, bw, bh = bounds
+        m = radius * SNAP_BOUND_MARGIN
+        x0 = max(x0, int(bx0 - m))
+        y0 = max(y0, int(by0 - m))
+        x1 = min(x1, int(bx0 + bw + m) + 1)
+        y1 = min(y1, int(by0 + bh + m) + 1)
     if x1 - x0 < 2 or y1 - y0 < 2:
         return None
     crop = mask[y0:y1, x0:x1]
@@ -140,21 +178,41 @@ def best_circle_center(
     sh = max(2, int(round((y1 - y0) / ds)))
     small = cv2.resize(crop, (sw, sh), interpolation=cv2.INTER_AREA)
     rr = max(1, int(round(radius / ds)))
+    # A kernel that covers the whole search region can only produce a flat
+    # score, so there is no "best" position to find — just noise to follow.
+    if 2 * rr + 1 >= min(sw, sh) * 2:
+        return None
     score = cv2.filter2D((small > 0).astype(np.float32), -1, _circle_kernel(rr),
                          borderType=cv2.BORDER_CONSTANT)
-    if float(score.max()) <= 0.0:
+    peak = float(score.max())
+    if peak <= 0.0:
+        return None
+    if (peak - float(score.min())) / peak < SNAP_MIN_CONTRAST:
         return None
 
-    # Small distance penalty = hysteresis toward where we already are.
     fx = (x1 - x0) / float(sw)
     fy = (y1 - y0) / float(sh)
     px = (cx - x0) / fx
     py = (cy - y0) / fy
+    # Hysteresis toward where we already are, expressed as a fraction of the
+    # peak per squared cell of distance. The old fixed 0.02 was scored against
+    # a coverage peak that grows with the kernel area, so on a large circle the
+    # penalty was thousands of times too small to break a tie and the snap
+    # point wandered between equally good centers.
     yy, xx = np.mgrid[0:sh, 0:sw]
-    score = score - 0.02 * ((xx - px) ** 2 + (yy - py) ** 2)
+    reach = max(1.0, float(rr))
+    score = score - (0.05 * peak / (reach * reach)) * (
+        (xx - px) ** 2 + (yy - py) ** 2)
 
     by, bx = divmod(int(np.argmax(score)), sw)
-    return (x0 + (bx + 0.5) * fx, y0 + (by + 0.5) * fy)
+    ox = x0 + (bx + 0.5) * fx
+    oy = y0 + (by + 0.5) * fy
+    if bounds is not None:
+        bx0, by0, bw, bh = bounds
+        m = radius * SNAP_BOUND_MARGIN
+        ox = min(max(ox, bx0 - m), bx0 + bw + m)
+        oy = min(max(oy, by0 - m), by0 + bh + m)
+    return (ox, oy)
 
 
 class TargetTracker:
@@ -176,9 +234,13 @@ class TargetTracker:
         # Target lock (screen space so it survives detect-scale changes).
         self._lock: Optional[Tuple[float, float]] = None
         self._lock_seen = 0.0                         # last time the lock matched
+        # Bounding box of the blob matched *this* frame, in detection coords.
+        # The snap is confined to it, so it can never re-aim onto a neighbour.
+        self._lock_box: Optional[Tuple[int, int, int, int]] = None
         # Max-coverage snap.
         self._on_color_since: Optional[float] = None
         self._off_color_at: Optional[float] = None
+        self._snap_radius_used = 0.0                  # last radius, for the UI
 
     def set_ema(self, ema: float) -> None:
         self._ema = max(0.0, min(1.0, ema))
@@ -198,6 +260,7 @@ class TargetTracker:
         self._prev_t = None
         self._track_frames = 0
         self._lock = None
+        self._lock_box = None
         self._on_color_since = None
         self._off_color_at = None
 
@@ -250,6 +313,10 @@ class TargetTracker:
         r_det = pull_radius * scale if pull_radius and pull_radius > 0 else None
 
         if not shapes:
+            # No blob this frame, so nothing for the snap to refine against —
+            # a stale box from the previous frame would confine the search to
+            # where the target used to be.
+            self._lock_box = None
             target_det = self._hold_lock_det(now, ox, oy, scale)
             if target_det is None:
                 self.reset()
@@ -262,6 +329,7 @@ class TargetTracker:
                 self.reset()
                 return None
         else:
+            self._lock_box = None      # region aiming does its own placement
             target_det = self._pick_region(
                 shapes, figure, active_region, cx, cy, r_det, part_attraction)
             if target_det is None:
@@ -271,8 +339,15 @@ class TargetTracker:
 
         # Max-coverage snap: after dwelling on the color, aim at the circle
         # position with the most color instead of the blob center.
-        if (mask is not None and snap_enabled and snap_radius > 0
-                and not use_regions):
+        #
+        # It only ever runs against the blob picked above (``_lock_box``): a
+        # coverage optimum computed over open screen is free to be a different
+        # target, which is precisely the drift the lock exists to prevent.
+        snap_det_r = 0.0
+        if (mask is not None and snap_enabled and not use_regions
+                and self._lock_box is not None):
+            snap_det_r = self._snap_radius_det(snap_radius, scale)
+        if snap_det_r > 0.0:
             if snap_after_ms <= 0:
                 # Instant snap: skip the dwell gate entirely. The gate below
                 # only starts its timer once the cursor is *resting on* the
@@ -288,14 +363,14 @@ class TargetTracker:
                 # the ink, and strict mask-under-cursor would then never let
                 # the snap engage even though the cursor rests on its target.
                 near = (math.hypot(target_det[0] - cx, target_det[1] - cy)
-                        <= max(12.0, 0.5 * snap_radius) * scale)
+                        <= max(12.0 * scale, 2.0 * snap_det_r))
                 self._update_on_color(mask, cx, cy, now, near)
                 engaged = (
                     self._on_color_since is not None
                     and (now - self._on_color_since) * 1000.0 >= snap_after_ms)
             if engaged:
                 best = best_circle_center(mask, target_det[0], target_det[1],
-                                          snap_radius * scale)
+                                          snap_det_r, bounds=self._lock_box)
                 if best is not None:
                     target_det = best
 
@@ -307,11 +382,18 @@ class TargetTracker:
     # -------------------------------------------------------------- selection
     def _pick_color(self, shapes, cx, cy, r_det, ox, oy, inv, scale, now,
                     lock_enabled):
-        """Blob-center picking with a sticky lock. Returns (target, switched)."""
+        """Blob-center picking with a sticky lock. Returns (target, switched).
+
+        Also records the chosen blob's bounding box in ``_lock_box`` so the
+        coverage snap can be confined to the target it is meant to refine.
+        """
         cands = []
         for s in shapes:
             bw, bh = s.bbox[2], s.bbox[3]
-            cands.append((s.center[0], s.center[1], math.hypot(bw, bh), s.area))
+            cands.append((s.center[0], s.center[1], math.hypot(bw, bh),
+                          s.area, s.bbox))
+
+        self._lock_box = None
 
         # 1) Try to re-identify the locked target among this frame's blobs.
         if lock_enabled and self._lock is not None:
@@ -319,10 +401,10 @@ class TargetTracker:
             ly = (self._lock[1] - oy) * scale
             best = None
             best_d = None
-            for (px, py, diag, _area) in cands:
+            for (px, py, diag, _area, bbox) in cands:
                 d = math.hypot(px - lx, py - ly)
                 if best_d is None or d < best_d:
-                    best_d, best = d, (px, py, diag)
+                    best_d, best = d, (px, py, diag, bbox)
             if best is not None:
                 # Allow more drift for big blobs, fast targets, and stale locks.
                 match_r = (max(LOCK_MATCH_MIN * scale, 0.8 * best[2])
@@ -333,6 +415,7 @@ class TargetTracker:
                 if best_d <= match_r and in_fov:
                     self._lock = (ox + best[0] * inv, oy + best[1] * inv)
                     self._lock_seen = now
+                    self._lock_box = best[3]
                     return (best[0], best[1]), False
             # Lock missed this frame: hold position briefly, then release.
             held = self._hold_lock_det(now, ox, oy, scale)
@@ -345,19 +428,20 @@ class TargetTracker:
         # the real target wins, but a much closer blob still wins outright.
         best = None
         best_s = None
-        for (px, py, diag, area) in cands:
+        for (px, py, diag, area, bbox) in cands:
             d = math.hypot(px - cx, py - cy)
             if r_det is not None and d > r_det:
                 continue
             score = d / (max(area, 1.0) ** 0.15)
             if best_s is None or score < best_s:
-                best_s, best = score, (px, py)
+                best_s, best = score, (px, py, bbox)
         if best is None:
             return None, False
+        self._lock_box = best[2]
         if lock_enabled:
             self._lock = (ox + best[0] * inv, oy + best[1] * inv)
             self._lock_seen = now
-        return best, True
+        return (best[0], best[1]), True
 
     def _hold_lock_det(self, now, ox, oy, scale):
         """Last known lock position (detection coords) while within grace."""
@@ -398,6 +482,29 @@ class TargetTracker:
         a = max(0.0, min(1.0, attraction))
         return (a * part[0] + (1.0 - a) * fcx,
                 a * part[1] + (1.0 - a) * fcy)
+
+    # -------------------------------------------------------- snap geometry
+    def _snap_radius_det(self, snap_radius: int, scale: float) -> float:
+        """Coverage-circle radius in detection px, ``<= 0`` meaning don't snap.
+
+        ``snap_radius <= 0`` sizes the circle from the locked blob instead of
+        from a fixed number. That is the useful default because the right size
+        is a property of the target, not of the user's field of view — the
+        setting used to borrow the FOV circle (250 px by default), which made
+        the "best coverage" position a statement about everything on that part
+        of the screen rather than about the target.
+        """
+        box = self._lock_box
+        if box is None:
+            return 0.0
+        if snap_radius > 0:
+            r_screen = float(snap_radius)
+        else:
+            short_det = max(1.0, float(min(box[2], box[3])))
+            r_screen = SNAP_AUTO_FRAC * short_det / max(scale, 1e-6)
+            r_screen = max(SNAP_AUTO_MIN, min(SNAP_AUTO_MAX, r_screen))
+        self._snap_radius_used = r_screen
+        return r_screen * scale
 
     # ------------------------------------------------------------- snap timer
     def _update_on_color(self, mask, cx, cy, now,
