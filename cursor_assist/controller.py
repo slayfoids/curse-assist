@@ -48,6 +48,16 @@ PURSUIT_FLOOR = 0.14       # never shorten below this fraction of the base
 # fades out as the target's own speed rises and is gone by this speed.
 PRECISION_FADE_SPEED = 220.0   # px/s
 
+# Adaptive ROI ("target follow"). Detection frame rate is the ceiling on how
+# well a moving target can be tracked, and scanning the whole screen is what
+# costs the frames. Once locked we scan a window around the target instead —
+# at full resolution, because the window is small enough to afford it.
+ADAPT_MIN_HALF = 110       # px; smallest follow window half-size
+ADAPT_SPEED_LEAD = 0.18    # s of target travel to allow for at the edges
+ADAPT_MISS_MAX = 3         # empty follow frames before falling back to full
+ADAPT_RESCAN_EVERY = 12    # force a full scan this often, to find new targets
+ADAPT_MAX_AREA_FRAC = 0.45  # skip the window if it isn't actually smaller
+
 
 class AssistController:
     def __init__(self, state: AppState, on_dwell_start: Optional[Callable] = None,
@@ -73,6 +83,12 @@ class AssistController:
         self._capture = None
         self._capture_key = None
         self._last_error_msg = None
+
+        # Adaptive ROI follow-window state.
+        self._adapt_at: Optional[Tuple[int, int]] = None  # screen coords
+        self._adapt_miss = 0
+        self._adapt_frames = 0
+        self._adapt_active = False
 
         self._det_thread: Optional[threading.Thread] = None
         self._move_thread: Optional[threading.Thread] = None
@@ -181,6 +197,33 @@ class AssistController:
                     origin = (origin[0] + x0, origin[1] + y0)
 
                 scale = max(0.2, min(1.0, snap.detect_scale))
+
+                # Adaptive ROI: scan a window around the locked target at full
+                # resolution rather than the whole screen downscaled. Cheaper
+                # (higher detection fps, which is the real limit on tracking)
+                # and more precise (no downscale rounding on the aim point).
+                self._adapt_frames += 1
+                self._adapt_active = False
+                if (snap.adaptive_roi and snap.lock_target
+                        and self._adapt_at is not None
+                        and self._adapt_miss < ADAPT_MISS_MAX
+                        and self._adapt_frames % ADAPT_RESCAN_EVERY != 0):
+                    fh, fw = frame.shape[:2]
+                    half = max(ADAPT_MIN_HALF,
+                               self._tracker.speed() * ADAPT_SPEED_LEAD)
+                    bx = self._adapt_at[0] - origin[0]
+                    by = self._adapt_at[1] - origin[1]
+                    x0 = int(max(0, bx - half))
+                    x1 = int(min(fw, bx + half))
+                    y0 = int(max(0, by - half))
+                    y1 = int(min(fh, by + half))
+                    if (x1 - x0) >= 48 and (y1 - y0) >= 48 and \
+                            (x1 - x0) * (y1 - y0) < ADAPT_MAX_AREA_FRAC * fw * fh:
+                        frame = frame[y0:y1, x0:x1]
+                        origin = (origin[0] + x0, origin[1] + y0)
+                        scale = 1.0
+                        self._adapt_active = True
+
                 small = (cv2.resize(frame, None, fx=scale, fy=scale,
                                     interpolation=cv2.INTER_AREA)
                          if scale < 0.999 else frame)
@@ -215,6 +258,19 @@ class AssistController:
                 self._publish(target)
                 self._target_speed = self._tracker.speed()
                 self._state.set("last_target_found", target is not None)
+
+                # Steer the follow window. A miss inside the window only
+                # widens the search after a few frames, so one dropped
+                # detection doesn't throw away the speed-up.
+                if target is not None:
+                    self._adapt_at = target
+                    self._adapt_miss = 0
+                elif self._adapt_active:
+                    self._adapt_miss += 1
+                else:
+                    self._adapt_at = None
+                    self._adapt_miss = 0
+                self._state.set("roi_following", self._adapt_active)
             except Exception as exc:
                 self._report(exc)
                 self._publish(None)
@@ -256,10 +312,17 @@ class AssistController:
             self._apply_suppression(want_suppress)
 
             if target is None:
-                self._dwell.reset()
+                # A dwell already in progress rides out a brief dropout rather
+                # than restarting; see DwellClicker.target_lost.
+                self._dwell.target_lost(self._state.get("dwell_grace_ms"))
                 self._glider.reset()
+                self._state.set("aim_valid", False)
                 time.sleep(MOVE_DT)
                 continue
+
+            self._state.set("aim_x", int(target[0]))
+            self._state.set("aim_y", int(target[1]))
+            self._state.set("aim_valid", True)
 
             smoothness = self._state.get("smoothness")
             tau = 0.03 + max(0.0, min(1.0, smoothness)) * 0.22

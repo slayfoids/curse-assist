@@ -206,10 +206,31 @@ class DwellClicker:
         self._last_fire = 0.0
         self._on_start = on_start
         self._on_fire = on_fire
+        self._lost_at: Optional[float] = None   # when the target vanished
 
     def reset(self) -> None:
         self._entered_at = None
         self._armed = True
+        self._lost_at = None
+
+    def target_lost(self, grace_ms: int = 0) -> None:
+        """The engine has no target this frame.
+
+        A dwell in progress survives a brief gap. Detection drops frames
+        whenever the colour flickers or the capture source stutters, and the
+        engine also discards targets older than a fraction of a second — so
+        cancelling the timer on the first missing frame meant that on a slow
+        or noisy source the dwell click simply never fired, which is the
+        "sometimes it just doesn't click" report.
+        """
+        if self._entered_at is None:
+            self.reset()
+            return
+        now = time.monotonic()
+        if self._lost_at is None:
+            self._lost_at = now
+        elif (now - self._lost_at) * 1000.0 > max(0, grace_ms):
+            self.reset()
 
     def update(
         self,
@@ -228,9 +249,13 @@ class DwellClicker:
         auto-clicker). With it off, it clicks once and won't fire again until the
         cursor leaves and re-enters the radius.
         """
-        if target_screen is None or not auto_click:
-            self._entered_at = None
+        if not auto_click:
+            self.reset()
             return False
+        if target_screen is None:
+            # Handled by target_lost(); never silently drop the timer here.
+            return False
+        self._lost_at = None
 
         dx = cursor_screen[0] - target_screen[0]
         dy = cursor_screen[1] - target_screen[1]

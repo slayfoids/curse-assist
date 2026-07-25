@@ -75,5 +75,42 @@ def test_watcher_does_not_fire_if_already_held_at_start(monkeypatch):
         w.stop()
 
 
+def test_recorder_accepts_mouse_buttons(monkeypatch):
+    """Recording a hold button must capture a mouse button, not a stray key.
+
+    The old recorder used keyboard.read_hotkey, which only ever sees the
+    keyboard: pressing a mouse button left it blocked, and it then returned
+    whichever key arrived next -- typically the Windows key as the user went
+    back to the browser. That is the "binds to the Windows key at random" bug.
+    """
+    from cursor_assist import webserver
+    from cursor_assist.config import AppState
+
+    pressed = {"vk": None}
+    monkeypatch.setattr(holdwatch, "is_down",
+                        lambda vk: vk == pressed["vk"])
+    app = webserver.WebApp(AppState(), open_browser=False)
+
+    pressed["vk"] = 0x05                       # VK_XBUTTON1 == MB4
+    assert app._record_hotkey(mouse_ok=True) == "MB4"
+    pressed["vk"] = 0x06
+    assert app._record_hotkey(mouse_ok=True) == "MB5"
+    # And a plain key still records through the same path.
+    pressed["vk"] = 0x20
+    assert app._record_hotkey(mouse_ok=True) == "space"
+
+
+def test_recorded_button_is_one_hold_can_actually_use(monkeypatch):
+    """Whatever the recorder returns must resolve for the watcher."""
+    from cursor_assist import webserver
+    from cursor_assist.config import AppState
+
+    pressed = {"vk": 0x05}
+    monkeypatch.setattr(holdwatch, "is_down", lambda vk: vk == pressed["vk"])
+    app = webserver.WebApp(AppState(), open_browser=False)
+    token = app._record_hotkey(mouse_ok=True)
+    assert resolve_vk(token) == 0x05
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

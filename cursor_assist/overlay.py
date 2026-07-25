@@ -29,6 +29,8 @@ WS_EX_NOACTIVATE = 0x08000000
 KEY_COLOR = "#010203"   # this exact color renders fully transparent + click-through
 SEARCH = "#b273ff"      # circle color while searching (Curse violet)
 LOCKED = "#ff4df0"      # circle color while a target is locked (magenta)
+AIM_LINE = "#00e5ff"    # cyan guide line from the pointer to the aim point
+AIM_HALO = "#0090a8"    # dimmer casing, so the line reads on light backgrounds
 
 
 class CrosshairOverlay:
@@ -85,8 +87,9 @@ class CrosshairOverlay:
             # Circle size: explicit overlay_radius if set, else the pull radius.
             r = int(self.state.get("overlay_radius")) or int(
                 self.state.get("pull_radius"))
+            cursor = None
             if show and r > 0:
-                x, y = self._cursor()
+                x, y = cursor = self._cursor()
                 enabled = self.state.get("pull_enabled")
                 found = enabled and self.state.get("last_target_found")
                 col = LOCKED if found else SEARCH
@@ -95,6 +98,31 @@ class CrosshairOverlay:
                 # small crosshair at the center
                 self.canvas.create_line(x - 9, y, x + 9, y, fill=col, width=1)
                 self.canvas.create_line(x, y - 9, x, y + 9, fill=col, width=1)
+
+            # Aim guide: a live line from the pointer to the pixel the engine
+            # is steering toward. Purely informational — it shows the user
+            # which way the assist wants to go so they can move *with* it
+            # rather than unknowingly pulling against it.
+            if (self.state.get("show_aim_line")
+                    and self.state.get("aim_valid")
+                    and self.state.get("pull_enabled")):
+                if cursor is None:
+                    cursor = self._cursor()
+                cx, cy = cursor
+                ax = int(self.state.get("aim_x"))
+                ay = int(self.state.get("aim_y"))
+                if (ax, ay) != (cx, cy):
+                    self.canvas.create_line(cx, cy, ax, ay,
+                                            fill=AIM_HALO, width=5)
+                    self.canvas.create_line(cx, cy, ax, ay,
+                                            fill=AIM_LINE, width=2)
+                    # Ring the destination so the goal pixel is unambiguous.
+                    self.canvas.create_oval(ax - 7, ay - 7, ax + 7, ay + 7,
+                                            outline=AIM_LINE, width=2)
+                    self.canvas.create_line(ax - 11, ay, ax - 4, ay,
+                                            fill=AIM_LINE, width=1)
+                    self.canvas.create_line(ax + 4, ay, ax + 11, ay,
+                                            fill=AIM_LINE, width=1)
         except Exception:
             pass
         self.root.after(16, self._tick)   # ~60 fps

@@ -69,9 +69,11 @@ PAGE = r"""<!doctype html>
     letter-spacing:4px}
   .brand .name{background:linear-gradient(90deg,#e9d5ff,var(--a1),var(--a2));
     -webkit-background-clip:text;background-clip:text;color:transparent}
-  .glyph{width:34px;height:34px;border-radius:10px;background:var(--accent);
-    display:grid;place-items:center;font-size:17px;color:#fff;letter-spacing:0;
-    box-shadow:0 0 24px rgba(168,85,247,.6),inset 0 0 12px rgba(255,255,255,.25)}
+  /* The mark stands on its own — no filled tile behind it, so the strokes
+     read as a drawn logo rather than an app-store icon. */
+  .mark{flex:0 0 34px;filter:drop-shadow(0 0 14px rgba(168,85,247,.45));
+    transition:transform .5s cubic-bezier(.2,.8,.3,1)}
+  .brand:hover .mark{transform:rotate(90deg)}
   .brand small{display:block;font-weight:500;font-size:10.5px;color:var(--muted);
     letter-spacing:1.2px;text-transform:none}
   .top-status{display:flex;gap:10px;margin-left:auto;align-items:center}
@@ -162,7 +164,9 @@ PAGE = r"""<!doctype html>
   /* Labels wrap rather than clip: a fixed basis with no wrapping meant any
      font fallback or display-scaling change cut the text off inside the
      card's overflow:hidden. */
-  .row label{flex:0 0 132px;color:var(--fg);font-size:13px;
+  /* Basis allows for the trailing info bubble (15px + margin) as well as the
+     text, so adding one never pushes the label into the clipped state again. */
+  .row label{flex:0 0 154px;color:var(--fg);font-size:13px;
     overflow-wrap:break-word;hyphens:auto}
   .row .val{flex:0 0 auto;min-width:48px;text-align:right;
     font-variant-numeric:tabular-nums;color:#fff;font-weight:700;font-size:13px}
@@ -241,6 +245,57 @@ PAGE = r"""<!doctype html>
   .hk{display:flex;align-items:center;gap:8px;margin:9px 0}
   .hk label{flex:0 0 108px;color:var(--muted);font-size:12px;
     overflow-wrap:break-word;hyphens:auto}
+
+  /* ---------- plain-language info bubbles ------------------------------- */
+  .i{display:inline-flex;align-items:center;justify-content:center;
+    width:15px;height:15px;margin-left:6px;border-radius:50%;flex:0 0 15px;
+    font:600 10px/1 "Segoe UI",system-ui,sans-serif;cursor:help;
+    color:var(--a1);background:rgba(168,85,247,.13);
+    border:1px solid rgba(168,85,247,.34);vertical-align:middle;
+    transition:.15s;position:relative}
+  .i:hover{background:var(--a1);color:#fff;border-color:var(--a1)}
+  /* Anchored to the icon's left edge and opening rightward, rather than
+     centred. Labels sit at the left of a much wider card, so this direction
+     always has room — centring pushed bubbles off-screen in the left column. */
+  .i::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 9px);
+    left:-4px;transform:translateY(4px);width:250px;max-width:60vw;
+    padding:9px 11px;border-radius:11px;font:400 11.5px/1.45 inherit;
+    color:var(--fg);background:rgba(24,14,38,.98);
+    border:1px solid var(--edge2);box-shadow:0 12px 34px rgba(0,0,0,.6);
+    opacity:0;pointer-events:none;transition:.16s;z-index:60;text-align:left}
+  .i:hover::after{opacity:1;transform:translateY(0)}
+  /* Applied on hover when opening rightward would leave the viewport. */
+  .i.flip::after{left:auto;right:0}
+
+  /* ---------- first-paint loader ---------------------------------------- */
+  #boot{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:20px;background:var(--bg);
+    transition:opacity .5s ease,visibility .5s}
+  #boot.gone{opacity:0;visibility:hidden}
+  #boot .ring{width:62px;height:62px;border-radius:50%;
+    border:2px solid rgba(168,85,247,.16);border-top-color:var(--a1);
+    border-right-color:var(--a2);animation:spin 900ms cubic-bezier(.5,.1,.4,.9) infinite}
+  #boot .wm{font-weight:800;font-size:15px;letter-spacing:.34em;
+    background:linear-gradient(90deg,#e9d5ff,var(--a1),var(--a2));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:pulse 1.5s ease-in-out infinite}
+  #boot .sub{font-size:11px;color:var(--muted2);letter-spacing:.06em;
+    margin-top:-12px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes pulse{0%,100%{opacity:.55}50%{opacity:1}}
+  /* Cards settle in once the loader clears. */
+  .booting .card{opacity:0}
+
+  /* ---------- patch notes ----------------------------------------------- */
+  .rel{border-left:2px solid rgba(168,85,247,.28);padding:0 0 2px 14px;
+    margin:0 0 16px}
+  .rel h3{margin:0 0 3px;font-size:13.5px;font-weight:700;color:var(--fg)}
+  .rel h3 .tagv{font-size:10.5px;font-weight:600;color:var(--a1);
+    background:rgba(168,85,247,.14);border:1px solid rgba(168,85,247,.3);
+    padding:1px 7px;border-radius:20px;margin-left:7px;vertical-align:1px}
+  .rel ul{margin:6px 0 0;padding-left:17px;color:var(--muted)}
+  .rel li{margin:4px 0;font-size:12.5px;line-height:1.5}
+  .rel li b{color:var(--fg);font-weight:600}
   .hk input{flex:1}
   .hint{color:var(--muted2);font-size:11.5px;margin-top:3px;line-height:1.5}
   .kbd{display:inline-block;padding:1px 7px;border-radius:6px;background:rgba(233,213,255,.08);
@@ -273,7 +328,12 @@ PAGE = r"""<!doctype html>
     .card,.section{opacity:1;transform:none}}
 </style>
 </head>
-<body>
+<body class="booting">
+<div id="boot">
+  <div class="ring"></div>
+  <div class="wm">CURSE</div>
+  <div class="sub">starting engine…</div>
+</div>
 <div class="bg">
   <div class="blob b1"></div><div class="blob b2"></div>
   <div class="blob b3"></div><div class="blob b4"></div>
@@ -281,7 +341,27 @@ PAGE = r"""<!doctype html>
 <div class="grid-lines"></div><div class="noise"></div>
 
 <div class="topbar"><div class="topbar-inner">
-  <div class="brand"><span class="glyph">☾</span>
+  <div class="brand">
+    <!-- Monoline mark: a reticle whose lower-right quadrant opens into a
+         pointer. Drawn from circles and straight strokes on a single grid so
+         it stays crisp at favicon size and reads as a tool, not decoration. -->
+    <svg class="mark" width="34" height="34" viewBox="0 0 32 32" fill="none"
+         aria-hidden="true">
+      <defs>
+        <linearGradient id="cg" x1="4" y1="4" x2="28" y2="28"
+                        gradientUnits="userSpaceOnUse">
+          <stop stop-color="#e9d5ff"/><stop offset=".55" stop-color="#a855f7"/>
+          <stop offset="1" stop-color="#d946ef"/>
+        </linearGradient>
+      </defs>
+      <circle cx="16" cy="16" r="10.5" stroke="url(#cg)" stroke-width="1.6"
+              stroke-linecap="round" stroke-dasharray="41 8"
+              transform="rotate(-45 16 16)"/>
+      <circle cx="16" cy="16" r="4.2" stroke="url(#cg)" stroke-width="1.6"/>
+      <path d="M16 1.5v5M1.5 16h5M16 25.5v5M25.5 16h5" stroke="url(#cg)"
+            stroke-width="1.6" stroke-linecap="round"/>
+      <path d="M17.6 17.6 27 27l-3.4.5-.5 3.4-5.5-13.3Z" fill="url(#cg)"/>
+    </svg>
     <span><span class="name">CURSE</span><small>color-guided pointer accessibility
       · <span id="ver">—</span></small></span></div>
   <div class="top-status">
@@ -392,6 +472,9 @@ PAGE = r"""<!doctype html>
     <div class="toggle"><span>Lock onto one target<br><small>hold it until it's gone</small></span>
       <label class="switch"><input type="checkbox" data-key="lock_target">
       <span class="track"></span></label></div>
+    <div class="toggle"><span>Target follow<br><small>scan a window, not the whole screen</small></span>
+      <label class="switch"><input type="checkbox" data-key="adaptive_roi">
+      <span class="track"></span></label></div>
     <div class="toggle"><span>Best-coverage snap<br><small>after resting on the color</small></span>
       <label class="switch"><input type="checkbox" data-key="snap_to_best">
       <span class="track"></span></label></div>
@@ -407,6 +490,9 @@ PAGE = r"""<!doctype html>
   <div class="card s3" style="animation-delay:.12s"><h2><span class="ico">◎</span>Field of view</h2>
     <div class="toggle"><span>Show crosshair circle</span>
       <label class="switch"><input type="checkbox" data-key="show_overlay">
+      <span class="track"></span></label></div>
+    <div class="toggle"><span>Show aim line<br><small>cyan line to the pixel it's aiming for</small></span>
+      <label class="switch"><input type="checkbox" data-key="show_aim_line">
       <span class="track"></span></label></div>
     <div class="row"><label>Pull radius</label>
       <input type="range" data-key="pull_radius" min="0" max="1000" step="10">
@@ -579,6 +665,12 @@ PAGE = r"""<!doctype html>
     <div class="cfg-list" id="cfgList"></div>
   </div>
 
+  <div class="card s12" style="animation-delay:.38s"><h2><span class="ico">✧</span>Latest updates</h2>
+    <div id="notes"></div>
+    <div class="hint">You're running <b><span id="verNote">—</span></b>. Newest
+      changes first.</div>
+  </div>
+
 </div>
 
 <footer>
@@ -624,9 +716,13 @@ $$('#actmode button').forEach(b=>b.onclick=()=>setKey('activation_mode',b.datase
 function setHold(t){$('#hk_hold').value=t;setKey('hotkey_hold',t).then(load);flash('hold button set to '+t);}
 $('#hk_hold').addEventListener('change',e=>{const v=e.target.value.trim();
   if(v)setKey('hotkey_hold',v).then(load);});
-async function recordHold(){flash('press the key to hold…');
-  const r=await act('record_hotkey');
-  if(r&&r.hotkey){setHold(r.hotkey);}else flash("recording needs the 'keyboard' package");}
+/* mouse:true -> the capture polls real key state, so a side button records as
+   MB4 instead of leaving the keyboard-only reader blocked until some unrelated
+   key (classically the Windows key) arrived and got bound by mistake. */
+async function recordHold(){flash('press the mouse button or key to hold… (Esc cancels)');
+  const r=await act('record_hotkey',{mouse:true});
+  if(r&&r.hotkey){setHold(r.hotkey);flash('bound to '+r.hotkey);}
+  else flash('nothing recorded — try again, or use a preset button');}
 // remember focus so polling doesn't stomp typed text
 $$('input.txt').forEach(el=>{el.addEventListener('focus',()=>focused=el);
   el.addEventListener('blur',()=>{if(focused===el)focused=null;});});
@@ -681,8 +777,13 @@ function applyHotkeys(){act('apply_hotkeys',{show:$('#hk_show').value.trim(),
   pull:$('#hk_pull').value.trim(), trigger:$('#hk_trigger').value.trim()})
   .then(()=>flash('hotkeys applied'));}
 function setTrigger(t){$('#hk_trigger').value=t;applyHotkeys();flash('click set to '+t);}
-async function record(which){flash('press any key or combo…');
-  const r=await act('record_hotkey');
+async function record(which){
+  // The click trigger may legitimately be a mouse button; the panel/toggle
+  // hotkeys are keyboard combos, so those keep the combo-aware reader.
+  const wantMouse = which==='trigger';
+  flash(wantMouse?'press the mouse button or key… (Esc cancels)'
+                 :'press any key or combo…');
+  const r=await act('record_hotkey',wantMouse?{mouse:true}:{});
   if(r&&r.hotkey){
     const el=which==='show'?$('#hk_show'):which==='trigger'?$('#hk_trigger'):$('#hk_pull');
     el.value=r.hotkey;applyHotkeys();flash('bound: '+r.hotkey);}
@@ -796,7 +897,98 @@ function fillStatic(){
   set('#hk_show',S.hotkey_show_panel);set('#hk_pull',S.hotkey_toggle_pull);
   set('#hk_trigger',S.hotkey_trigger);set('#hk_hold',S.hotkey_hold);
 }
-async function load(){S=await fetch('/api/state').then(r=>r.json());fillStatic();render();}
+/* ---- plain-language help on every setting -------------------------------
+   Written for someone who has never read the README: what it does and when to
+   change it, no jargon. Keyed by the setting's data-key so adding a control
+   never means hunting through the markup to attach its explanation. */
+const TIPS={
+  smoothness:"How gliding the pointer feels. Higher is smoother and calmer; lower reacts faster. If it feels floaty, lower it.",
+  max_speed:"The fastest the pointer is ever allowed to travel. Lower it if the pointer feels like it lunges.",
+  target_ema:"How much wobble is filtered out of the target. Higher holds steadier on something still. It eases off by itself when the target moves.",
+  motion_response:"How quickly tracking reacts once the target starts moving. Raise this if the pointer trails behind moving things.",
+  jitter_floor:"How firmly the pointer is held still when the target isn't moving. Raise it if the pointer shivers while resting on something.",
+  precision_px:"How close to the target the pointer starts slowing down, so it settles gently instead of darting the last bit. Set 0 to turn off.",
+  precision_slow:"How much it slows inside that zone. Lower is gentler and more precise, but takes a moment longer to arrive.",
+  max_accel:"A limit on how sharply the pointer can speed up. Stops it lurching if the camera has a bad moment. Lower = calmer.",
+  pointer_gain:"Only needed if the pointer still comes up short. The app measures your mouse speed by itself first — try leaving this alone.",
+  dwell_ms:"How long to rest on something before it clicks for you.",
+  click_radius:"How close the pointer must be to count as resting on the target. Bigger is more forgiving.",
+  click_interval_ms:"When repeat clicking is on, the gap between each click.",
+  dwell_grace_ms:"If the colour flickers for a moment, keep counting instead of starting over. Raise it if clicks don't happen on a jumpy picture.",
+  sensitivity:"How fussy colour matching is. Raise it if your target isn't spotted; lower it if it grabs the wrong things.",
+  min_contour_area:"Ignore colour patches smaller than this, so specks and noise don't get chased.",
+  detect_scale:"Detection quality vs effort. Lower is lighter on the computer; higher spots smaller things.",
+  pull_radius:"The pointer is only guided toward colours inside this circle. Everything outside is ignored.",
+  overlay_radius:"Just the size of the circle drawn on screen. Doesn't change behaviour.",
+  snap_after_ms:"After resting on the colour this long, aim shifts to the middle of the thickest part. Set 0 to do it straight away — better for things that keep moving.",
+  part_attraction:"How strictly it aims at the exact body part. Lower blends toward the middle of the figure, which is steadier.",
+};
+function attachTips(){
+  document.querySelectorAll('[data-key]').forEach(el=>{
+    const tip=TIPS[el.dataset.key];if(!tip)return;
+    const row=el.closest('.row,.toggle');if(!row)return;
+    const host=row.querySelector('label,span');
+    if(!host||host.querySelector('.i'))return;
+    const i=document.createElement('span');
+    i.className='i';i.textContent='i';i.setAttribute('data-tip',tip);
+    // Whitespace first, so the label can wrap between text and bubble rather
+    // than being forced into one over-wide unbreakable run.
+    host.appendChild(document.createTextNode(' '));
+    // Decide the open direction at hover time, not at build time: the panel is
+    // fluid, so an icon's distance from the right edge changes with the window.
+    i.addEventListener('mouseenter',()=>{
+      const w=Math.min(250,innerWidth*0.6);
+      i.classList.toggle('flip',i.getBoundingClientRect().left-4+w>innerWidth-8);
+    });
+    host.appendChild(i);
+  });
+}
+
+/* ---- patch notes --------------------------------------------------------
+   Kept here so the panel is the single place a user looks; each entry says
+   what changed in terms of what they would have noticed. */
+const NOTES=[
+ {v:"1.0.3",t:"Aim line, plain-English help, and two real fixes",items:[
+   ["Aim guide line","A cyan line now runs from your pointer to the exact pixel it's steering for, so you can move with it instead of fighting it by accident."],
+   ["Dwell clicks that never fired","If the colour flickered for even one frame the click timer silently restarted, so on a jumpy picture it could never finish. It now rides out brief dropouts."],
+   ["Record button binding the wrong key","Recording only ever watched the keyboard, so pressing a mouse button left it waiting — and it then grabbed whatever key you pressed next, usually the Windows key. It now records mouse buttons properly."],
+   ["Target follow","Once locked on, only a small window around the target is scanned, at full quality — about 17× less work per frame, and a more precise aim point."],
+   ["Info buttons","Every setting has an 'i' explaining what it does in plain language."],
+ ]},
+ {v:"1.0.2",t:"Hold rewritten, low-sensitivity support, spasm damping",items:[
+   ["Hold button works","Hold was going through a system-wide event hook that failed three different silent ways. It now reads the button directly, and tells you if a button can't be used instead of doing nothing."],
+   ["Low mouse sensitivity","Windows shrinks the app's movements to match your mouse speed setting, so on a low setting the pull crawled. It now measures that and compensates."],
+   ["Precision zone","The pointer eases off close to the target instead of darting the last stretch."],
+   ["Steadier under stress","A limit on how sharply the pointer can speed up, so one bad camera frame can't fling it."],
+   ["Screenshot colour picker","Freeze the screen and click the exact pixel, instead of chasing a live eyedropper."],
+ ]},
+ {v:"1.0.1",t:"Tracking overhaul",items:[
+   ["Spasms on direction changes","The speed estimate lagged about a tenth of a second, so on anything moving back and forth the pointer was thrown the wrong way each time it turned. Fixed at the source."],
+   ["Consistent at any frame rate","Smoothing used to depend on how fast the camera ran, so the same settings felt different on different machines."],
+   ["Instant snap","Snap delay can be set to 0 for targets that keep moving."],
+ ]},
+];
+function renderNotes(){
+  const box=document.getElementById('notes');if(!box||box.dataset.done)return;
+  box.dataset.done='1';
+  box.innerHTML=NOTES.map(r=>`<div class="rel"><h3>${esc(r.t)}
+    <span class="tagv">v${esc(r.v)}</span></h3><ul>`+
+    r.items.map(([h,b])=>`<li><b>${esc(h)}</b> — ${esc(b)}</li>`).join('')+
+    `</ul></div>`).join('');
+}
+
+function bootDone(){
+  const b=document.getElementById('boot');
+  if(!b||b.classList.contains('gone'))return;
+  b.classList.add('gone');
+  document.body.classList.remove('booting');
+  setTimeout(()=>b.remove(),600);
+}
+
+async function load(){S=await fetch('/api/state').then(r=>r.json());fillStatic();render();
+  attachTips();renderNotes();
+  if(S.version)$('#verNote').textContent='v'+S.version;
+  bootDone();}
 async function poll(){try{S=await fetch('/api/state').then(r=>r.json());
   if(!dragging)fillStaticStatusOnly();render();}catch(e){}}
 function fillStaticStatusOnly(){ // refresh only fields the user isn't editing

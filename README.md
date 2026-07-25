@@ -4,8 +4,8 @@
 
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-a855f7?logo=windows&logoColor=white)](#install)
 [![Python](https://img.shields.io/badge/python-3.10%2B-7c3aed?logo=python&logoColor=white)](#install)
-[![Version](https://img.shields.io/badge/version-1.0.2-a855f7)](https://github.com/slayfoids/curse-assist/releases)
-[![Tests](https://img.shields.io/badge/tests-89%20passing-d946ef)](#testing)
+[![Version](https://img.shields.io/badge/version-1.0.3-a855f7)](https://github.com/slayfoids/curse-assist/releases)
+[![Tests](https://img.shields.io/badge/tests-94%20passing-d946ef)](#testing)
 [![Accuracy](https://img.shields.io/badge/static%20aim-%E2%89%A42.5px-c026d3)](#testing)
 [![UI](https://img.shields.io/badge/UI-local%20web%20panel-9333ea)](#the-control-panel-web-ui)
 [![License](https://img.shields.io/badge/license-MIT-6d28d9)](LICENSE)
@@ -91,7 +91,7 @@ input path, exactly as an assistive mouse or trackball would.
 
 ## Install & run
 
-**Download [`CursorAssist-v1.0.2.exe`](https://github.com/slayfoids/curse-assist/releases)
+**Download [`CursorAssist-v1.0.3.exe`](https://github.com/slayfoids/curse-assist/releases)
 from the latest release and double-click it.** That's the whole install — one
 file, no Python, no packages, nothing to set up.
 

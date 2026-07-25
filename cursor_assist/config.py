@@ -139,6 +139,11 @@ class AppState:
     # --- Dwell click -----------------------------------------------------
     dwell_ms: int = 300              # how long to hold on target before click
     click_radius: int = 25           # px radius the cursor must hold within
+    # How long a target may vanish without cancelling a dwell in progress.
+    # Detection drops a frame whenever the colour flickers or the source
+    # stutters; without this the timer restarted on every blip and a dwell
+    # click could never complete on a slow capture source.
+    dwell_grace_ms: int = 400
     click_repeat: bool = False       # keep auto-clicking while on target
     click_interval_ms: int = 120     # time between repeated clicks
 
@@ -162,6 +167,14 @@ class AppState:
     # from settling in the middle of several same-color targets and stops the
     # jitter/spasms caused by the pick flip-flopping between blobs.
     lock_target: bool = True
+    # Adaptive ROI ("target follow"): once locked, scan only a small window
+    # around the target — at full resolution instead of downscaled. Detection
+    # frame rate is the hard ceiling on tracking a moving target (no amount of
+    # filtering recovers samples that were never taken), and a small window is
+    # dramatically cheaper *and* more precise than the whole screen. Falls back
+    # to a full scan when the target is lost, and rescans periodically anyway
+    # so a better target elsewhere can still be picked up.
+    adaptive_roi: bool = True
     # After the cursor has been on the target color for snap_after_ms, aim at
     # the position where a circle of the "circle size" radius (overlay_radius,
     # falling back to pull_radius) covers the most target color.
@@ -187,6 +200,13 @@ class AppState:
     pull_radius: int = 250
     show_overlay: bool = True        # draw the FOV circle over the cursor
     overlay_radius: int = 0          # drawn circle size; 0 = match pull_radius
+    # Purely visual: a line from the pointer to the pixel currently being aimed
+    # at, so the user can see where the assist is heading and move with it
+    # instead of unknowingly pulling against it.
+    show_aim_line: bool = True
+    aim_x: int = 0                   # published by the engine, read by overlay
+    aim_y: int = 0
+    aim_valid: bool = False
 
     # --- Input control ---------------------------------------------------
     suppress_mouse: bool = False     # block physical mouse movement while pulling
@@ -200,6 +220,7 @@ class AppState:
     loop_fps: float = 0.0
     last_target_found: bool = False
     pointer_gain_measured: float = 1.0   # learned OS pointer gain (read-only)
+    roi_following: bool = False          # adaptive ROI active right now
 
     # Convenience helpers so callers don't have to remember the lock -------
     def get(self, name: str):

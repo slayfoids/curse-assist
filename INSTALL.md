@@ -12,7 +12,7 @@ it, done. No Python, no packages, no setup.
 ## Step 1 — Download it
 
 Go to the **[Releases page](https://github.com/slayfoids/curse-assist/releases)**
-and download **`CursorAssist-v1.0.2.exe`** (or whatever the newest version is)
+and download **`CursorAssist-v1.0.3.exe`** (or whatever the newest version is)
 from the latest release.
 
 Put it anywhere you like — Desktop, Downloads, a USB stick. It doesn't matter,
@@ -25,7 +25,7 @@ and it doesn't need to stay in any particular folder.
 
 ## Step 2 — Run it
 
-**Double-click `CursorAssist-v1.0.2.exe`.**
+**Double-click `CursorAssist-v1.0.3.exe`.**
 
 ### The blue "Windows protected your PC" box
 

@@ -23,6 +23,7 @@ from . import persistence
 from . import __version__
 from .config import REGIONS, AppState, ColorTarget
 from .controller import AssistController
+from . import holdwatch
 from .holdwatch import HoldWatcher
 from .webpage import PAGE
 
@@ -47,6 +48,19 @@ MOUSE_TOKENS = {
 # ``_winmouse.py``). Listening for "down" alone therefore dropped every quick
 # re-press: the hold button worked once and then looked completely dead.
 PRESS_TYPES = ("down", "double")
+
+# What the hold/trigger recorder will accept, in priority order. Mouse buttons
+# come first so a side-button press is reported as MB4 rather than as whatever
+# modifier happened to be held at the same time.
+_RECORDABLE = {
+    "MB4": 0x05, "MB5": 0x06, "MMB": 0x04, "RMB": 0x02,
+    "right ctrl": 0xA3, "left ctrl": 0xA2,
+    "right shift": 0xA1, "left shift": 0xA0,
+    "right alt": 0xA5, "left alt": 0xA4,
+    "space": 0x20, "tab": 0x09, "caps lock": 0x14,
+    **{f"f{n}": 0x70 + n - 1 for n in range(1, 13)},
+    **{c: ord(c.upper()) for c in "abcdefghijklmnopqrstuvwxyz0123456789"},
+}
 
 
 def _hsv_to_hex(c: ColorTarget) -> str:
@@ -352,12 +366,43 @@ class WebApp:
             pass
         self._mouse_hooks = []
 
-    def _record_hotkey(self) -> Optional[str]:
-        try:
-            import keyboard
-            return keyboard.read_hotkey(suppress=False)
-        except Exception:
-            return None
+    def _record_hotkey(self, mouse_ok: bool = False) -> Optional[str]:
+        """Capture the next key (or button) the user presses.
+
+        ``keyboard.read_hotkey`` only ever sees the *keyboard*. Pressing a
+        mouse button left it blocking, and it then returned whichever key was
+        pressed next — typically the Windows key or Alt-Tab as the user went
+        back to the browser window. That is the "binds to the Windows key at
+        random" bug: it was recording the wrong event entirely, several
+        seconds late.
+
+        With ``mouse_ok`` the capture polls real key state instead, so mouse
+        buttons and keyboard keys are recorded through one identical path.
+        """
+        if not mouse_ok:
+            try:
+                import keyboard
+                return keyboard.read_hotkey(suppress=False)
+            except Exception:
+                return None
+
+        import time as _t
+        # Wait for everything to be released first, so the click that pressed
+        # "Record" in the browser isn't itself captured.
+        deadline = _t.monotonic() + 1.5
+        while _t.monotonic() < deadline:
+            if not any(holdwatch.is_down(v) for v in _RECORDABLE.values()):
+                break
+            _t.sleep(0.01)
+        deadline = _t.monotonic() + 10.0
+        while _t.monotonic() < deadline:
+            if holdwatch.is_down(0x1B):       # Esc cancels
+                return None
+            for token, vk in _RECORDABLE.items():
+                if holdwatch.is_down(vk):
+                    return token
+            _t.sleep(0.008)
+        return None
 
     # ----------------------------------------------------------- API payload
     def state_payload(self) -> dict:
@@ -394,7 +439,11 @@ class WebApp:
                 "detect_thin_border": s.detect_thin_border,
                 "pull_radius": s.pull_radius,
                 "show_overlay": s.show_overlay,
+                "show_aim_line": s.show_aim_line,
                 "overlay_radius": s.overlay_radius,
+                "adaptive_roi": s.adaptive_roi,
+                "roi_following": s.roi_following,
+                "dwell_grace_ms": s.dwell_grace_ms,
                 "suppress_mouse": s.suppress_mouse,
                 "lock_target": s.lock_target,
                 "snap_to_best": s.snap_to_best,
@@ -514,7 +563,7 @@ class WebApp:
                 self.state.set("hotkey_trigger", data.get("trigger") or "")
             self._register_hotkeys()
         elif action == "record_hotkey":
-            hk = self._record_hotkey()
+            hk = self._record_hotkey(mouse_ok=bool(data.get("mouse")))
             return {"hotkey": hk}
         elif action == "eyedrop":
             self._start_eyedrop()
