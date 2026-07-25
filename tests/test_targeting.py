@@ -145,5 +145,31 @@ def test_snap_timer_resets_when_cursor_leaves_color():
     assert t._on_color_since is None
 
 
+def test_instant_snap_bypasses_the_dwell_gate():
+    """``snap_after_ms=0`` must snap on the very first frame, off-color.
+
+    The timed path only starts its dwell clock once the cursor is *resting on*
+    the color. A moving target never lets that happen, so without the bypass a
+    0 ms delay would still never engage -- on exactly the targets that need it.
+    """
+    mask = np.zeros((400, 400), dtype=np.uint8)
+    mask[90:130, 90:130] = 255        # dense block centered on (110, 110)
+    shapes = [blob(90, 90, 80, 80)]   # bbox centroid is (130, 130)
+    kw = dict(mask=mask, snap_enabled=True, snap_radius=15)
+    far = (350, 350)                  # cursor still chasing; nowhere near color
+
+    # Timed: the gate never opens from off-color, so we get the plain centroid.
+    timed = TargetTracker(ema=1.0)
+    assert pick(timed, shapes, far, snap_after_ms=1000, **kw) == (130, 130)
+    assert timed._on_color_since is None
+
+    # Instant: engages immediately and re-aims onto the dense block.
+    now = TargetTracker(ema=1.0)
+    out = pick(now, shapes, far, snap_after_ms=0, **kw)
+    assert now._on_color_since is not None
+    assert out != (130, 130)
+    assert 90 < out[0] < 130 and 90 < out[1] < 130
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

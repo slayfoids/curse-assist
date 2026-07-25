@@ -347,10 +347,12 @@ PAGE = r"""<!doctype html>
       <label class="switch"><input type="checkbox" data-key="snap_to_best">
       <span class="track"></span></label></div>
     <div class="row" id="snapRow"><label>Snap after (ms)</label>
-      <input type="range" data-key="snap_after_ms" min="200" max="3000" step="100">
+      <input type="range" data-key="snap_after_ms" min="0" max="3000" step="50">
       <span class="val"></span></div>
     <div class="hint">Lock stops the pointer drifting between several same-color
-      targets. Snap re-aims to where the circle covers the most color.</div>
+      targets. Snap re-aims to where the circle covers the most color.
+      Set the delay to <b>0</b> for an instant snap — the timed version waits for
+      the pointer to rest on the color, which a moving target never lets it do.</div>
   </div>
 
   <div class="card s3" style="animation-delay:.12s"><h2><span class="ico">◎</span>Field of view</h2>

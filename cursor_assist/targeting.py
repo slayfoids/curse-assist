@@ -227,15 +227,27 @@ class TargetTracker:
         # position with the most color instead of the blob center.
         if (mask is not None and snap_enabled and snap_radius > 0
                 and not use_regions):
-            # "On color" also counts having arrived at the pulled target: for
-            # concave shapes the aim point (centroid) can sit just off the
-            # ink, and strict mask-under-cursor would then never let the snap
-            # engage even though the cursor is resting on its target.
-            near = (math.hypot(target_det[0] - cx, target_det[1] - cy)
-                    <= max(12.0, 0.5 * snap_radius) * scale)
-            self._update_on_color(mask, cx, cy, now, near)
-            if (self._on_color_since is not None
-                    and (now - self._on_color_since) * 1000.0 >= snap_after_ms):
+            if snap_after_ms <= 0:
+                # Instant snap: skip the dwell gate entirely. The gate below
+                # only starts its timer once the cursor is *resting on* the
+                # color — a condition a moving target never lets it reach, so
+                # a 0 ms delay would otherwise still never engage on exactly
+                # the targets that need it most.
+                self._on_color_since = now
+                self._off_color_at = None
+                engaged = True
+            else:
+                # "On color" also counts having arrived at the pulled target:
+                # for concave shapes the aim point (centroid) can sit just off
+                # the ink, and strict mask-under-cursor would then never let
+                # the snap engage even though the cursor rests on its target.
+                near = (math.hypot(target_det[0] - cx, target_det[1] - cy)
+                        <= max(12.0, 0.5 * snap_radius) * scale)
+                self._update_on_color(mask, cx, cy, now, near)
+                engaged = (
+                    self._on_color_since is not None
+                    and (now - self._on_color_since) * 1000.0 >= snap_after_ms)
+            if engaged:
                 best = best_circle_center(mask, target_det[0], target_det[1],
                                           snap_radius * scale)
                 if best is not None:

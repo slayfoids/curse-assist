@@ -100,6 +100,26 @@ runs — the global hotkey falls back to a window-focused key binding.
 > [**INSTALL.md**](INSTALL.md) — it covers installing Python, getting the
 > project, and running in background mode, with nothing assumed.
 
+### Standalone .exe (nothing to install on the far end)
+
+To hand someone a single file that needs no Python at all:
+
+```bash
+py -m pip install pyinstaller
+py tools/build_exe.py
+```
+
+That produces **`dist/CursorAssist.exe`** (~67 MB — it carries its own Python,
+OpenCV and numpy). Send that one file; double-clicking it starts the engine and
+opens the same control panel. The build is defined by
+[`CursorAssist.spec`](CursorAssist.spec) and is plain and unobfuscated: the
+console stays enabled so a failure to start is visible and screenshottable, and
+UPX packing is off (it trips antivirus heuristics for no real gain).
+
+Because the exe is unsigned, Windows SmartScreen will show *"Windows protected
+your PC"* on first run — the recipient clicks **More info → Run anyway**. Signing
+it with a code-signing certificate is the only real fix for that.
+
 ## Run
 
 ```bash
@@ -222,7 +242,7 @@ within which the tool offers guidance.
 | **Detect thin outlines** | Detect colored *outlines*, not just filled color. |
 | **Lock onto one target** | Pick a single color blob and keep guiding toward *it* until it disappears (plus a short grace), then re-acquire. With several same-color targets on screen this prevents the pointer from drifting to the middle of the group or twitching between them. |
 | **Best-coverage snap** | After the pointer has rested on the color for the set time (default 1 s), aim is refined to the spot where the drawn circle (**Circle size**, falling back to the assist radius) covers the *most* target color. |
-| **Snap after (ms)** | How long the pointer must sit on the color before the best-coverage snap engages (200–3000 ms). |
+| **Snap after (ms)** | How long the pointer must sit on the color before the best-coverage snap engages (0–3000 ms). **Set it to 0 for an instant snap:** the timed path only starts its clock once the pointer is *resting on* the color, which a moving target never allows — so 0 skips that gate entirely and refines aim from the first frame. |
 | **Body-part detection** | Off (default) = guide to the color directly. On = aid a body region of a drawn figure. |
 | **Target region** | When body-part detection is on, which region (Head/Torso/Arms/Legs/Feet) to aid. Bands adapt to the figure's pose (standing / crouching / prone). |
 | **Part attraction** | How strongly the aim is drawn to the chosen part: 1.00 = exactly at the part, lower blends toward the figure's center of mass for steadiness. |

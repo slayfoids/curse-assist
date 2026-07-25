@@ -37,6 +37,15 @@ MOUSE_TOKENS = {
     "MB5": "x2",
 }
 
+# Mouse event types that all mean "the button went down".
+#
+# The `mouse` package rewrites a press landing within the system double-click
+# time (~500 ms) of the *previous button event* -- including the preceding
+# release -- into a "double" event instead of a "down" (see its
+# ``_winmouse.py``). Listening for "down" alone therefore dropped every quick
+# re-press: the hold button worked once and then looked completely dead.
+PRESS_TYPES = ("down", "double")
+
 
 def _hsv_to_hex(c: ColorTarget) -> str:
     r, g, b = colorsys.hsv_to_rgb(c.h / 179.0, c.s / 255.0, c.v / 255.0)
@@ -221,47 +230,76 @@ class WebApp:
 
     # --------------------------------------------------------------- hotkeys
     def _register_hotkeys(self) -> None:
+        """(Re)bind every global hotkey.
+
+        Each binding gets its own guard. Previously a single ``try`` wrapped
+        the lot, so one unusable key name -- or a missing optional package --
+        silently took every *later* binding down with it, and the swallowed
+        exception left nothing to diagnose from.
+        """
         self._clear_hotkeys()
         try:
             import keyboard
-            self._hotkey_handles.append(keyboard.add_hotkey(
-                self.state.get("hotkey_show_panel"),
-                lambda: webbrowser.open(self.url)))
-            self._hotkey_handles.append(keyboard.add_hotkey(
-                self.state.get("hotkey_toggle_pull"),
-                lambda: self._set_pull(not self.state.get("pull_enabled"))))
-            # Hold-to-activate: the pull is live only while the chosen key or
-            # mouse button is physically held down.
-            if self.state.get("activation_mode") == "hold":
-                hold = self.state.get("hotkey_hold")
-                mouse_btn = MOUSE_TOKENS.get(hold)
-                if mouse_btn:
-                    import mouse
-                    self._mouse_hooks.append(mouse.on_button(
-                        lambda: self._set_pull(True),
-                        buttons=(mouse_btn,), types=("down",)))
-                    self._mouse_hooks.append(mouse.on_button(
-                        lambda: self._set_pull(False),
-                        buttons=(mouse_btn,), types=("up",)))
-                elif hold:
-                    self._key_hooks.append(keyboard.hook_key(
-                        hold,
-                        lambda e: self._set_pull(e.event_type == "down")))
-            # Instant-click trigger, only while in "trigger" click mode. The
-            # trigger can be a keyboard key/combo or a mouse button.
-            trig = self.state.get("hotkey_trigger")
-            if self.state.get("click_mode") == "trigger" and trig:
-                mouse_btn = MOUSE_TOKENS.get(trig)
-                if mouse_btn:
-                    import mouse
-                    self._mouse_hooks.append(mouse.on_button(
-                        self.controller.trigger_click,
-                        buttons=(mouse_btn,), types=("down",)))
-                else:
-                    self._hotkey_handles.append(keyboard.add_hotkey(
-                        trig, self.controller.trigger_click))
-        except Exception:
-            pass
+        except Exception as exc:
+            self._last_error = f"hotkeys unavailable ({exc})"
+            return
+
+        def _bind(fn, what: str) -> None:
+            try:
+                fn()
+            except Exception as exc:
+                self._last_error = f"could not bind {what} ({exc})"
+
+        _bind(lambda: self._hotkey_handles.append(keyboard.add_hotkey(
+            self.state.get("hotkey_show_panel"),
+            lambda: webbrowser.open(self.url))), "the show-panel hotkey")
+        _bind(lambda: self._hotkey_handles.append(keyboard.add_hotkey(
+            self.state.get("hotkey_toggle_pull"),
+            lambda: self._set_pull(not self.state.get("pull_enabled")))),
+            "the toggle hotkey")
+
+        # Hold-to-activate: the pull is live only while the chosen key or
+        # mouse button is physically held down.
+        if self.state.get("activation_mode") == "hold":
+            hold = self.state.get("hotkey_hold")
+            mouse_btn = MOUSE_TOKENS.get(hold)
+            if mouse_btn:
+                _bind(lambda: self._hook_mouse_hold(mouse_btn),
+                      f"hold button {hold}")
+            elif hold:
+                _bind(lambda: self._key_hooks.append(keyboard.hook_key(
+                    hold,
+                    lambda e: self._set_pull(e.event_type == "down"))),
+                    f"hold key {hold}")
+
+        # Instant-click trigger, only while in "trigger" click mode. The
+        # trigger can be a keyboard key/combo or a mouse button.
+        trig = self.state.get("hotkey_trigger")
+        if self.state.get("click_mode") == "trigger" and trig:
+            mouse_btn = MOUSE_TOKENS.get(trig)
+            if mouse_btn:
+                _bind(lambda: self._hook_mouse_trigger(mouse_btn),
+                      f"trigger button {trig}")
+            else:
+                _bind(lambda: self._hotkey_handles.append(
+                    keyboard.add_hotkey(trig, self.controller.trigger_click)),
+                    f"trigger hotkey {trig}")
+
+    def _hook_mouse_hold(self, button: str) -> None:
+        """Press/release hooks for a mouse button used as the hold key."""
+        import mouse
+        self._mouse_hooks.append(mouse.on_button(
+            lambda: self._set_pull(True),
+            buttons=(button,), types=PRESS_TYPES))
+        self._mouse_hooks.append(mouse.on_button(
+            lambda: self._set_pull(False),
+            buttons=(button,), types=("up",)))
+
+    def _hook_mouse_trigger(self, button: str) -> None:
+        import mouse
+        self._mouse_hooks.append(mouse.on_button(
+            self.controller.trigger_click,
+            buttons=(button,), types=PRESS_TYPES))
 
     def _clear_hotkeys(self) -> None:
         try:
