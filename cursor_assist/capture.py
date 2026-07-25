@@ -11,11 +11,59 @@ beyond consuming its virtual-camera video output.
 
 from __future__ import annotations
 
+import ctypes
+from ctypes import wintypes
 from typing import Optional, Tuple
 
 import numpy as np
 
 from .config import CaptureConfig
+
+
+class _DEVMODE(ctypes.Structure):
+    _fields_ = [
+        ("dmDeviceName", wintypes.WCHAR * 32), ("dmSpecVersion", wintypes.WORD),
+        ("dmDriverVersion", wintypes.WORD), ("dmSize", wintypes.WORD),
+        ("dmDriverExtra", wintypes.WORD), ("dmFields", wintypes.DWORD),
+        ("dmPositionX", ctypes.c_long), ("dmPositionY", ctypes.c_long),
+        ("dmDisplayOrientation", wintypes.DWORD),
+        ("dmDisplayFixedOutput", wintypes.DWORD),
+        ("dmColor", ctypes.c_short), ("dmDuplex", ctypes.c_short),
+        ("dmYResolution", ctypes.c_short), ("dmTTOption", ctypes.c_short),
+        ("dmCollate", ctypes.c_short), ("dmFormName", wintypes.WCHAR * 32),
+        ("dmLogPixels", wintypes.WORD), ("dmBitsPerPel", wintypes.DWORD),
+        ("dmPelsWidth", wintypes.DWORD), ("dmPelsHeight", wintypes.DWORD),
+        ("dmDisplayFlags", wintypes.DWORD),
+        ("dmDisplayFrequency", wintypes.DWORD),
+        ("dmICMMethod", wintypes.DWORD), ("dmICMIntent", wintypes.DWORD),
+        ("dmMediaType", wintypes.DWORD), ("dmDitherType", wintypes.DWORD),
+        ("dmReserved1", wintypes.DWORD), ("dmReserved2", wintypes.DWORD),
+        ("dmPanningWidth", wintypes.DWORD), ("dmPanningHeight", wintypes.DWORD),
+    ]
+
+
+ENUM_CURRENT_SETTINGS = -1
+
+
+def display_refresh_hz(default: float = 60.0) -> float:
+    """Refresh rate of the primary display right now, in Hz.
+
+    This is the useful upper bound on how often it is worth looking at the
+    screen: a display produces new content at its refresh rate and no faster,
+    so scanning above it re-reads frames that haven't changed. Read live rather
+    than assumed, because it differs per machine (and changes when a monitor is
+    plugged in, or the mode is switched).
+    """
+    try:
+        dm = _DEVMODE()
+        dm.dmSize = ctypes.sizeof(_DEVMODE)
+        ok = ctypes.windll.user32.EnumDisplaySettingsW(
+            None, ENUM_CURRENT_SETTINGS, ctypes.byref(dm))
+        hz = float(dm.dmDisplayFrequency) if ok else 0.0
+        # 0 and 1 are documented placeholders meaning "hardware default".
+        return hz if hz > 1.0 else default
+    except Exception:
+        return default
 
 
 class ScreenCapture:

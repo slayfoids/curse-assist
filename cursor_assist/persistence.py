@@ -48,6 +48,8 @@ _SCALAR_FIELDS = (
     "min_contour_area",
     "sensitivity",
     "detect_scale",
+    "scan_fps",
+    "idle_scan_fps",
     "roi_x",
     "roi_y",
     "roi_w",

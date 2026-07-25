@@ -4,8 +4,8 @@
 
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-a855f7?logo=windows&logoColor=white)](#install)
 [![Python](https://img.shields.io/badge/python-3.10%2B-7c3aed?logo=python&logoColor=white)](#install)
-[![Version](https://img.shields.io/badge/version-1.0.4-a855f7)](https://github.com/slayfoids/curse-assist/releases)
-[![Tests](https://img.shields.io/badge/tests-96%20passing-d946ef)](#testing)
+[![Version](https://img.shields.io/badge/version-1.0.5-a855f7)](https://github.com/slayfoids/curse-assist/releases)
+[![Tests](https://img.shields.io/badge/tests-102%20passing-d946ef)](#testing)
 [![Accuracy](https://img.shields.io/badge/static%20aim-%E2%89%A42.5px-c026d3)](#testing)
 [![UI](https://img.shields.io/badge/UI-local%20web%20panel-9333ea)](#the-control-panel-web-ui)
 [![License](https://img.shields.io/badge/license-MIT-6d28d9)](LICENSE)
@@ -91,7 +91,7 @@ input path, exactly as an assistive mouse or trackball would.
 
 ## Install & run
 
-**Download [`CursorAssist-v1.0.4.exe`](https://github.com/slayfoids/curse-assist/releases)
+**Download [`CursorAssist-v1.0.5.exe`](https://github.com/slayfoids/curse-assist/releases)
 from the latest release and double-click it.** That's the whole install — one
 file, no Python, no packages, nothing to set up.
 
@@ -316,12 +316,19 @@ desktop costs ~67 ms, which alone caps the loop near **15 fps** no matter how
 cheap detection is (detection of the same frame costs ~3 ms). While a target is
 locked, only the window around it is grabbed: ~17 ms, or **60 fps**.
 
-That 60 is not a software limit — it is the display's refresh rate. A screen
-draws new content at its refresh rate and no faster, so scanning a 60 Hz display
-120 times a second would read half the frames twice and learn nothing from them.
-On a 120 Hz or 144 Hz panel the same code simply runs faster; there is nothing to
-configure. If tracking a fast target still misses, the lever is a faster display
-or a smaller capture region, not more scanning of the same pixels.
+The scan rate itself is the **Scan rate** setting. At its default of `0` it
+matches the display's detected refresh rate, re-read every few seconds so
+plugging in a different monitor is picked up while running — a 60 Hz laptop
+panel and a 240 Hz desktop each get the right value with no configuration.
+
+Matching the display is the right default because a screen draws new content at
+its refresh rate and no faster: scanning a 60 Hz panel 120 times a second reads
+half the frames twice and learns nothing from them. Set an explicit rate to cap
+the work and leave more CPU for everything else, or to go *above* the detected
+refresh when the capture source is not the display — an OBS virtual camera runs
+at whatever OBS is configured for, unrelated to the panel. The panel reports the
+target rate alongside the achieved one, since the rate is a ceiling: if a grab
+takes longer than the target period the loop simply runs slower.
 
 **How steadiness works:** jitter and lag pull in opposite directions — smoothing
 hard kills detection noise on a resting target but drags behind a moving one,

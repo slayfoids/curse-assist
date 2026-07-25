@@ -434,6 +434,8 @@ class WebApp:
                 "sensitivity": s.sensitivity,
                 "min_contour_area": s.min_contour_area,
                 "detect_scale": s.detect_scale,
+                "scan_fps": s.scan_fps,
+                "display_hz": s.display_hz,
                 "roi_x": s.roi_x, "roi_y": s.roi_y,
                 "roi_w": s.roi_w, "roi_h": s.roi_h,
                 "detect_thin_border": s.detect_thin_border,

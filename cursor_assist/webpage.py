@@ -635,6 +635,10 @@ PAGE = r"""<!doctype html>
     <div class="row"><label>Detail (speed)</label>
       <input type="range" data-key="detect_scale" min="0.25" max="1" step="0.05">
       <span class="val"></span></div>
+    <div class="row"><label>Scan rate</label>
+      <input type="range" data-key="scan_fps" min="0" max="360" step="5">
+      <span class="val"></span></div>
+    <div class="hint" id="scanHint">—</div>
   </div>
 
   <div class="card s6" style="animation-delay:.33s"><h2><span class="ico">⌨</span>Hotkeys</h2>
@@ -852,6 +856,17 @@ function render(){
   $('#dot').classList.toggle('live',!!S.target_found);
   $('#statFps').textContent=(S.fps||0)+' fps';
   if(S.version)$('#ver').textContent='v'+S.version;
+  // Target vs achieved: the scan rate is a ceiling, not a promise — if a grab
+  // takes longer than the target period the loop simply runs slower, and
+  // seeing both numbers is what makes that obvious rather than mysterious.
+  const hz=S.display_hz||0, want=S.scan_fps||0, got=S.fps||0;
+  const sh=$('#scanHint');
+  if(sh) sh.innerHTML = want>0
+    ? `Target <b>${want}/s</b> (manual) · achieving <b>${got}/s</b>. `+
+      `Your display refreshes at <b>${hz} Hz</b>`+
+      (want>hz?` — above that, scans re-read frames the screen hasn't redrawn yet.`:`.`)
+    : `<b>Auto</b>: matching your display's <b>${hz} Hz</b> · achieving `+
+      `<b>${got}/s</b>. Plug in a faster monitor and this follows it.`;
   const g=S.pointer_gain_measured;
   $('#gainNow').textContent=(g==null?'—':(g.toFixed(2)+'×'+(g<0.75?
     '  (low sensitivity — being compensated)':'')));
@@ -918,6 +933,7 @@ const TIPS={
   sensitivity:"How fussy colour matching is. Raise it if your target isn't spotted; lower it if it grabs the wrong things.",
   min_contour_area:"Ignore colour patches smaller than this, so specks and noise don't get chased.",
   detect_scale:"Detection quality vs effort. Lower is lighter on the computer; higher spots smaller things.",
+  scan_fps:"How many times a second the screen is checked. Leave at 0 to match your monitor automatically — a screen can't show new pictures faster than its refresh rate, so scanning above it just sees the same picture twice. Set a number to cap it and free up the computer, or to go higher if you capture from OBS rather than the screen.",
   pull_radius:"The pointer is only guided toward colours inside this circle. Everything outside is ignored.",
   overlay_radius:"Just the size of the circle drawn on screen. Doesn't change behaviour.",
   snap_after_ms:"After resting on the colour this long, aim shifts to the middle of the thickest part. Set 0 to do it straight away — better for things that keep moving.",
@@ -948,6 +964,11 @@ function attachTips(){
    Kept here so the panel is the single place a user looks; each entry says
    what changed in terms of what they would have noticed. */
 const NOTES=[
+ {v:"1.0.5",t:"Scan rate is now adjustable",items:[
+   ["Set your own scan rate","A new Scan rate slider in Capture source. Leave it at 0 and it matches your monitor automatically — including 144Hz, 165Hz and 240Hz screens, and it follows along if you plug a different one in while it's running."],
+   ["Why 0 is usually right","A screen only draws new pictures at its refresh rate, so checking more often than that just sees the same picture twice — cost with nothing gained. Set a number if you want to cap it and free up the computer, or to go higher when you capture from OBS instead of the screen, since OBS runs at its own rate."],
+   ["It shows you both numbers","The panel shows what you asked for and what it's actually managing, so if your computer can't keep up you can see that rather than guess."],
+ ]},
  {v:"1.0.4",t:"Four times the scan rate",items:[
    ["Much faster scanning","Grabbing the whole screen cost about 67ms — that alone held everything to roughly 15 looks per second, however little work the rest did. While locked on, only the small area around your target is grabbed now, which is about 4× quicker and reaches 60 per second: the most your screen can actually show."],
    ["Why not higher","A 60Hz screen only draws 60 new pictures a second, so looking more often than that just sees the same picture twice. On a 120Hz or 144Hz screen this will go faster on its own — nothing to change."],

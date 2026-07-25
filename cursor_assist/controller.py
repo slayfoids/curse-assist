@@ -22,7 +22,7 @@ from typing import Callable, Optional, Tuple
 import cv2
 
 from . import cursor as cur
-from .capture import make_capture
+from .capture import display_refresh_hz, make_capture
 from .config import AppState
 from .detection import find_shapes, largest_figure
 from .mouse_block import MouseSuppressor
@@ -30,8 +30,12 @@ from .targeting import TargetTracker
 
 MOVE_HZ = 240.0            # cursor easing rate (time-based, so mostly for polish)
 MOVE_DT = 1.0 / MOVE_HZ
-DETECT_MAX_HZ = 240.0      # cap; real detection fps is limited by the source/CPU
-DETECT_MIN_DT = 1.0 / DETECT_MAX_HZ
+# Hard bounds on the configurable scan rate. The ceiling is a safety rail, not
+# a target — the useful rate is the display's refresh (see AppState.scan_fps).
+SCAN_HZ_MIN = 5.0
+SCAN_HZ_MAX = 1000.0
+DISPLAY_HZ_RECHECK_S = 3.0  # re-read the refresh rate this often, so plugging
+                            # in a different monitor is picked up while running
 TARGET_STALE_S = 0.25      # ignore targets older than this
 
 # Pursuit easing. Below the knee the easing constant is untouched, so a resting
@@ -94,6 +98,11 @@ class AssistController:
         self._capture = None
         self._capture_key = None
         self._last_error_msg = None
+
+        # Display refresh, re-read periodically rather than once at startup so
+        # swapping monitors mid-session is picked up.
+        self._display_hz = display_refresh_hz()
+        self._display_hz_at = 0.0
 
         # Adaptive ROI follow-window state.
         self._adapt_at: Optional[Tuple[int, int]] = None  # screen coords
@@ -158,6 +167,27 @@ class AssistController:
             self._capture = make_capture(cfg)
             self._capture_key = key
         return self._capture
+
+    def _scan_period(self, pulling: bool) -> float:
+        """Seconds between scans, honouring the configured rate.
+
+        ``scan_fps`` of 0 means "match the display", which is the rate above
+        which extra scans only re-read frames the screen has not redrawn yet.
+
+        Reads live state rather than a snapshot: this also runs on the error
+        path, where a snapshot may not have been taken yet.
+        """
+        now = time.perf_counter()
+        if now - self._display_hz_at > DISPLAY_HZ_RECHECK_S:
+            self._display_hz = display_refresh_hz()
+            self._display_hz_at = now
+            self._state.set("display_hz", round(self._display_hz, 1))
+
+        if not pulling:
+            want = float(self._state.get("idle_scan_fps"))
+        else:
+            want = float(self._state.get("scan_fps")) or self._display_hz
+        return 1.0 / max(SCAN_HZ_MIN, min(SCAN_HZ_MAX, want))
 
     def _publish(self, target: Optional[Tuple[int, int]]) -> None:
         with self._tlock:
@@ -314,9 +344,12 @@ class AssistController:
                 self._capture_key = None
                 time.sleep(0.3)
 
-            # Full rate while pulling; ~12 Hz when idle (enough for live
-            # "target found" feedback while tuning, without pegging a core).
-            pace = DETECT_MIN_DT if pulling else (1.0 / 12.0)
+            # Configured rate while pulling; a slow idle tick otherwise (enough
+            # for live "target found" feedback while tuning, without pegging a
+            # core). Note this is a *floor* on the interval — if a grab takes
+            # longer than the target period the loop simply runs slower, which
+            # is why the panel reports the achieved rate next to the target.
+            pace = self._scan_period(pulling)
             dt = time.perf_counter() - t0
             if dt < pace:
                 time.sleep(pace - dt)

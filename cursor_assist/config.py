@@ -154,6 +154,23 @@ class AppState:
     sensitivity: int = 12            # global color tolerance applied to all colors
     detect_scale: float = 0.5        # downscale factor for detection speed (0.25-1)
 
+    # How often the screen is scanned, in scans per second.
+    #
+    # 0 = match the display's refresh rate, which is the sensible default: a
+    # screen produces new content at its refresh rate and no faster, so
+    # scanning above it re-reads frames that have not changed — cost with no
+    # information. Detected live, so a 60 Hz laptop panel and a 240 Hz monitor
+    # each get the right value without configuration, and it follows the
+    # display if the mode changes or a different monitor is plugged in.
+    #
+    # Set it explicitly to cap the work (a lower number leaves more CPU for
+    # whatever else is running) or to push past the detected rate if the
+    # capture source is not the display — an OBS virtual camera, for instance,
+    # runs at whatever OBS is configured for, not at the panel's refresh.
+    scan_fps: int = 0
+    idle_scan_fps: int = 12          # rate while guidance is off (just for the
+                                     # live "target found" light while tuning)
+
     # Detection area: crop the captured frame to this pixel box before detecting
     # (works for any source, incl. OBS). All zeros / w==0 / h==0 = whole frame.
     roi_x: int = 0
@@ -218,6 +235,7 @@ class AppState:
 
     # --- Loop status (loop -> GUI, read-only for the GUI) ----------------
     loop_fps: float = 0.0
+    display_hz: float = 60.0         # detected refresh rate (read-only)
     last_target_found: bool = False
     pointer_gain_measured: float = 1.0   # learned OS pointer gain (read-only)
     roi_following: bool = False          # adaptive ROI active right now
