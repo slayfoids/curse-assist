@@ -27,6 +27,8 @@ Desktop.ini
 *.png
 *.jpg
 debug_frames/
+# ...but keep the README screenshots
+!docs/*.png
 
 # Background-mode runtime state (random-named interpreter copy + instance.json)
 .runtime/

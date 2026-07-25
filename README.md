@@ -1,9 +1,58 @@
-# Curse — Color-Based Cursor Assist
+<div align="center">
 
-**An assistive-technology tool for people with limited hand movement, tremor, or
-reduced pointing accuracy.** It helps a user who cannot reliably control a mouse
-place and activate the pointer on things they want to interact with on their own
-screen.
+![CURSE](docs/banner.svg)
+
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-a855f7?logo=windows&logoColor=white)](#install)
+[![Python](https://img.shields.io/badge/python-3.10%2B-7c3aed?logo=python&logoColor=white)](#install)
+[![Tests](https://img.shields.io/badge/tests-64%20passing-d946ef)](#testing)
+[![Accuracy](https://img.shields.io/badge/static%20aim-%E2%89%A42.5px-c026d3)](#testing)
+[![UI](https://img.shields.io/badge/UI-local%20web%20panel-9333ea)](#the-control-panel-web-ui)
+[![License](https://img.shields.io/badge/license-MIT-6d28d9)](LICENSE)
+
+**An assistive-technology tool for people with limited hand movement, tremor,
+or reduced pointing accuracy.**
+
+*It helps a user who cannot reliably control a mouse place and activate the
+pointer on things they want to interact with on their own screen.*
+
+</div>
+
+---
+
+## ✨ The panel
+
+![Curse control panel](docs/panel-hero.png)
+
+| Detection & body aim | Saved configs |
+|---|---|
+| ![Detection cards](docs/panel-detection.png) | ![Saved configs](docs/panel-configs.png) |
+
+<sub>Full-page screenshot: [docs/full.png](docs/full.png)</sub>
+
+## 🚀 Feature highlights
+
+- 🎯 **Color-guided pull** — pick any on-screen color (picker or eyedropper);
+  the pointer eases toward it, smoothly and frame-rate independently.
+- 🔒 **Single-target lock** — sticks to one target until it's gone; never
+  drifts to the middle of a group or twitches between look-alikes.
+- ⭕ **Best-coverage snap** — after resting on the color, aim refines to where
+  the circle covers the *most* color.
+- 🧍 **Body aim** — Head / Torso / Arms / Legs / Feet targeting on a drawn
+  figure, pose-adaptive bands, tunable part attraction.
+- 🖱️ **Toggle or Hold activation** — flip with a hotkey, or stay active only
+  while a mouse side button is held. Audio cues: 2 high beeps on, 2 low off.
+- 🖲️ **Flexible clicking** — dwell auto-click, instant trigger key/button,
+  repeat auto-fire, or fully manual.
+- 💾 **Saved configs** — snapshot your whole setup under a unique code like
+  `CRS-7KQ2XN`; load it back anywhere.
+- 🫨 **Tremor steadying** — optionally damp physical mouse input while the
+  assist is moving so a shaky hand doesn't fight it.
+- 🧪 **Proven accuracy** — live-motion simulation suite; ≤2.5 px mean static
+  error, ~10 px tracking error at 500 px/s.
+
+---
+
+## What it is
 
 It captures the screen, detects a color the user chooses, and **gently guides the
 mouse cursor toward that color**, so someone with low dexterity only has to move

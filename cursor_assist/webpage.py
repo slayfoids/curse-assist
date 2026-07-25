@@ -160,8 +160,8 @@ PAGE = r"""<!doctype html>
   /* --------------------------------------------------------------- controls - */
   .row{display:flex;align-items:center;gap:12px;margin:11px 0}
   .row label{flex:0 0 128px;color:var(--fg);font-size:13px}
-  .row .val{flex:0 0 52px;text-align:right;font-variant-numeric:tabular-nums;
-    color:#fff;font-weight:700;font-size:13px}
+  .row .val{flex:0 0 auto;min-width:48px;text-align:right;
+    font-variant-numeric:tabular-nums;color:#fff;font-weight:700;font-size:13px}
   input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:6px;
     border-radius:999px;outline:0;cursor:pointer;
     background:linear-gradient(90deg,var(--a3),var(--a2) var(--p,50%),rgba(200,160,255,.1) var(--p,50%))}

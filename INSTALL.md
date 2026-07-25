@@ -1,6 +1,6 @@
 # Full Install Guide (Windows, step by step)
 
-This guide takes you from a fresh Windows PC to running **Cursor Assist** — an
+This guide takes you from a fresh Windows PC to running **Curse** (Cursor Assist) — an
 assistive-technology tool that helps a person with limited hand movement or
 tremor place and click the mouse pointer on their own screen. It includes the
 **background (no-console) mode**. No prior Python experience needed — just follow
