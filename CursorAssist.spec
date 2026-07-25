@@ -15,6 +15,17 @@ installed. Nothing here is obfuscated — the binary is plainly named and its
 contents are inspectable with any standard PyInstaller archive viewer.
 """
 
+import re
+import pathlib
+
+# Read the version straight out of the package rather than importing it, so
+# building never depends on the package being importable in the build env.
+_init = pathlib.Path(SPECPATH) / 'cursor_assist' / '__init__.py'
+_m = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', _init.read_text(),
+               re.MULTILINE)
+VERSION = _m.group(1) if _m else '0.0.0'
+EXE_NAME = f'CursorAssist-v{VERSION}'
+
 a = Analysis(
     ['run.py'],
     pathex=[],
@@ -52,7 +63,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='CursorAssist',
+    name=EXE_NAME,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

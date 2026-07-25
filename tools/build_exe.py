@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Build the single-file ``dist/CursorAssist.exe``.
+"""Build the single-file ``dist/CursorAssist-v<version>.exe``.
 
 Usage (from the repo root)::
 
@@ -11,12 +11,20 @@ and tells you the one command to run if it isn't.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SPEC = ROOT / "CursorAssist.spec"
+
+
+def version() -> str:
+    """Version string from the package, without importing it."""
+    text = (ROOT / "cursor_assist" / "__init__.py").read_text(encoding="utf-8")
+    m = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', text, re.MULTILINE)
+    return m.group(1) if m else "0.0.0"
 
 
 def main() -> int:
@@ -39,7 +47,7 @@ def main() -> int:
     if result.returncode != 0:
         return result.returncode
 
-    exe = ROOT / "dist" / "CursorAssist.exe"
+    exe = ROOT / "dist" / f"CursorAssist-v{version()}.exe"
     if not exe.exists():
         print("Build reported success but the exe is missing.", file=sys.stderr)
         return 1

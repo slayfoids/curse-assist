@@ -4,7 +4,8 @@
 
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-a855f7?logo=windows&logoColor=white)](#install)
 [![Python](https://img.shields.io/badge/python-3.10%2B-7c3aed?logo=python&logoColor=white)](#install)
-[![Tests](https://img.shields.io/badge/tests-64%20passing-d946ef)](#testing)
+[![Version](https://img.shields.io/badge/version-1.0.2-a855f7)](https://github.com/slayfoids/curse-assist/releases)
+[![Tests](https://img.shields.io/badge/tests-89%20passing-d946ef)](#testing)
 [![Accuracy](https://img.shields.io/badge/static%20aim-%E2%89%A42.5px-c026d3)](#testing)
 [![UI](https://img.shields.io/badge/UI-local%20web%20panel-9333ea)](#the-control-panel-web-ui)
 [![License](https://img.shields.io/badge/license-MIT-6d28d9)](LICENSE)
@@ -90,7 +91,7 @@ input path, exactly as an assistive mouse or trackball would.
 
 ## Install & run
 
-**Download [`CursorAssist.exe`](https://github.com/slayfoids/curse-assist/releases)
+**Download [`CursorAssist-v1.0.2.exe`](https://github.com/slayfoids/curse-assist/releases)
 from the latest release and double-click it.** That's the whole install — one
 file, no Python, no packages, nothing to set up.
 
@@ -136,8 +137,11 @@ py -m pip install pyinstaller
 py tools/build_exe.py
 ```
 
-That produces **`dist/CursorAssist.exe`** (~67 MB — it carries its own Python,
-OpenCV and numpy). The build is defined by [`CursorAssist.spec`](CursorAssist.spec)
+That produces **`dist/CursorAssist-v<version>.exe`** (~67 MB — it carries its own
+Python, OpenCV and numpy). The version is stamped from `__version__` in
+[`cursor_assist/__init__.py`](cursor_assist/__init__.py), which is the single
+place to edit for a release — the spec reads it to name the binary, and the
+panel header and console banner both show it. The build is defined by [`CursorAssist.spec`](CursorAssist.spec)
 and is plain and unobfuscated: the console stays enabled so a failure to start is
 visible and screenshottable, and UPX packing is off (it trips antivirus
 heuristics for no real gain). Set `console=False` in the spec for a no-console

@@ -20,6 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 
 from . import persistence
+from . import __version__
 from .config import REGIONS, AppState, ColorTarget
 from .controller import AssistController
 from .holdwatch import HoldWatcher
@@ -109,8 +110,11 @@ class WebApp:
         import sys
         self.start()
         if sys.stdout:  # None under pythonw (background/windowless mode)
-            print(f"Curse UI running at {self.url}")
-            print("Press Ctrl+C here to quit (or use Quit in the page).")
+            # flush: stdout is block-buffered when redirected to a file, which
+            # is exactly when someone is capturing output to report a problem.
+            print(f"Curse v{__version__} — UI running at {self.url}", flush=True)
+            print("Press Ctrl+C here to quit (or use Quit in the page).",
+                  flush=True)
         self._shutdown = threading.Event()
         try:
             self._shutdown.wait()
@@ -360,6 +364,7 @@ class WebApp:
         with self.state.lock:
             s = self.state
             return {
+                "version": __version__,
                 "pull_enabled": s.pull_enabled,
                 "activation_mode": s.activation_mode,
                 "hotkey_hold": s.hotkey_hold,

@@ -12,7 +12,8 @@ it, done. No Python, no packages, no setup.
 ## Step 1 — Download it
 
 Go to the **[Releases page](https://github.com/slayfoids/curse-assist/releases)**
-and download **`CursorAssist.exe`** from the latest release.
+and download **`CursorAssist-v1.0.2.exe`** (or whatever the newest version is)
+from the latest release.
 
 Put it anywhere you like — Desktop, Downloads, a USB stick. It doesn't matter,
 and it doesn't need to stay in any particular folder.
@@ -24,7 +25,7 @@ and it doesn't need to stay in any particular folder.
 
 ## Step 2 — Run it
 
-**Double-click `CursorAssist.exe`.**
+**Double-click `CursorAssist-v1.0.2.exe`.**
 
 ### The blue "Windows protected your PC" box
 
@@ -93,7 +94,7 @@ If you'd rather it watched an OBS scene:
 
 1. Press `Win + R`, type `shell:startup`, press Enter. The **Startup** folder
    opens.
-2. Right-click `CursorAssist.exe` → **Copy**.
+2. Right-click the `CursorAssist-v...exe` file → **Copy**.
 3. In the Startup folder, right-click → **Paste shortcut** (a shortcut, not the
    file itself — so the exe can stay where it is).
 
@@ -107,11 +108,11 @@ To undo, delete that shortcut from the Startup folder.
 |---|---|
 | Blue "Windows protected your PC" box | Click **More info** → **Run anyway**. Expected for any unsigned program. |
 | Antivirus flags or quarantines it | Also expected for an unsigned, self-extracting build. Restore it and add an exclusion for the file. The build is deliberately unpacked and unobfuscated so it can be inspected. |
-| It closes instantly / nothing opens | Run it from Command Prompt (`cd` to the folder, then `CursorAssist.exe`) so the error stays on screen, and send a screenshot. |
+| It closes instantly / nothing opens | Run it from Command Prompt (`cd` to the folder, then the exe's name) so the error stays on screen, and send a screenshot. |
 | No target is ever found (`target: --`) | Raise **Sensitivity**, re-pick the colour with the eyedropper, or narrow the detection area in the **Capture** card. |
 | Pointer lands slightly off the target | Set Windows display scaling to 100%, or capture the exact region you work in. |
 | Hold button does nothing | Make sure **Activation** is set to **Hold** and a button is bound. Any binding failure is reported at the top of the panel. |
-| Want to remove it | Close it, delete `CursorAssist.exe`, and remove the Startup shortcut if you made one. Settings live in `%LOCALAPPDATA%\CursorAssist` — delete that folder too for a clean sweep. |
+| Want to remove it | Close it, delete the exe, and remove the Startup shortcut if you made one. Settings live in `%LOCALAPPDATA%\CursorAssist` — delete that folder too for a clean sweep. |
 
 ---
 
@@ -143,7 +144,8 @@ py -m pip install pyinstaller
 py tools/build_exe.py
 ```
 
-That writes `dist/CursorAssist.exe`. The build is defined by
+That writes `dist/CursorAssist-v<version>.exe`, stamped from `__version__`
+in `cursor_assist/__init__.py`. The build is defined by
 [`CursorAssist.spec`](CursorAssist.spec) — plain and unobfuscated, console left
 on so startup failures stay visible, UPX off because packing only trips
 antivirus heuristics. To build a no-console version instead, set `console=False`

@@ -282,7 +282,8 @@ PAGE = r"""<!doctype html>
 
 <div class="topbar"><div class="topbar-inner">
   <div class="brand"><span class="glyph">☾</span>
-    <span><span class="name">CURSE</span><small>color-guided pointer accessibility</small></span></div>
+    <span><span class="name">CURSE</span><small>color-guided pointer accessibility
+      · <span id="ver">—</span></small></span></div>
   <div class="top-status">
     <div class="pill"><span class="dot" id="dot"></span><b id="fps">—</b></div>
   </div>
@@ -749,6 +750,7 @@ function render(){
   $('#fps').textContent=(S.target_found?'● ':'')+(S.fps||0)+' fps';
   $('#dot').classList.toggle('live',!!S.target_found);
   $('#statFps').textContent=(S.fps||0)+' fps';
+  if(S.version)$('#ver').textContent='v'+S.version;
   const g=S.pointer_gain_measured;
   $('#gainNow').textContent=(g==null?'—':(g.toFixed(2)+'×'+(g<0.75?
     '  (low sensitivity — being compensated)':'')));
