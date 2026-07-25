@@ -40,16 +40,15 @@ from .segmentation import contour_points_in_region, segment_regions
 # auto-scales with frame rate: more lead when detection is slow, less when fast.
 # A static target is below LEAD_DEADZONE and gets zero prediction, so precision
 # on a still target is never affected.
-# Most of the pipeline lag is *fixed* — smoothing and the movement easing take
-# the same time however often the screen is scanned. Only the sampling part
-# shrinks with the scan rate. Weighting the lead almost entirely on the
-# detection interval therefore removed compensation the pointer still needed:
-# raising the scan rate made tracking measurably *worse*, which is the opposite
-# of what raising it is for. Measured lag against a 500 px/s target went 12.3 px
-# at 60 scans/s to 16.3 px at 240. Rebalanced onto the fixed term, the same
-# sweep reads 12.2 / 10.8 / 9.6 — faster scanning now helps, as expected.
-LEAD_BASE = 0.040
-LEAD_FRAMES = 0.6
+# With velocity feed-forward in the movement loop (see TargetTracker.velocity)
+# the steady-state lag this used to paper over is gone at the source, so the
+# lead only has to cover how *stale* a detection is by the time it is acted on
+# — roughly half a scan interval plus processing. Leaving it sized for the old
+# job made the two compensate for the same lag twice, which showed up as
+# overshoot at direction changes: 30 px of lag and 36 px of overshoot against a
+# 1000 px/s target, against 8.9 / 13 once rebalanced.
+LEAD_BASE = 0.012
+LEAD_FRAMES = 0.5
 LEAD_MIN_S = 0.02
 LEAD_MAX_S = 0.14
 LEAD_DEADZONE = 60.0
@@ -76,6 +75,28 @@ LEAD_WARMUP = 6       # frames of continuous tracking before lead kicks in
 STRAIGHT_WINDOW = 10      # samples
 STRAIGHT_MIN = 0.35       # at or below this, the target is not going anywhere
 STRAIGHT_FULL = 0.70      # at or above this, treat the motion as real travel
+
+# --- Aim commitment ---------------------------------------------------------
+# The filters above all key off *speed*: they smooth hard when the target point
+# is slow and open up when it is fast. Detection noise defeats that, because
+# noise looks fast. On an animating figure with ragged edges the aim point
+# wandered 9 px and changed 20 times a second while the figure stood still, and
+# no combination of smoothness, steadiness, jitter floor or precision zone
+# brought it below 6 px — the knobs cannot fix it because they are adjusting
+# the wrong variable.
+#
+# What separates noise from movement here is *displacement*, not speed: noise
+# stays within a bounded distance of where the target really is and averages to
+# zero, while movement accumulates. So the final aim point is filtered on how
+# far the candidate has strayed rather than how fast it is going — creeping
+# while the candidate stays inside a small zone, following immediately once it
+# leaves. That is what makes the aim commit to a pixel and hold it, instead of
+# redecorating it twenty times a second.
+COMMIT_TAU_HOLD = 0.90    # s; how slowly the aim drifts inside the zone
+COMMIT_TAU_FOLLOW = 0.025  # s; how quickly it follows once the zone is left
+# Above this travel speed the target is genuinely going somewhere and the zone
+# is faded out entirely, so committing never costs tracking.
+COMMIT_FADE_SPEED = 240.0
 
 # --- Adaptive smoothing (one-euro) ------------------------------------------
 # Jitter and lag pull in opposite directions: smoothing hard kills detection
@@ -147,9 +168,17 @@ SNAP_MAX_KERNEL_R = 16   # downscale the search so the kernel stays this small
 
 # The snap circle is sized from the target itself when left on "auto". Its job
 # is to find the meatiest part *of the thing being aimed at* — a torso rather
-# than a trailing limb — so it scales with the blob's narrow dimension. A circle
-# any larger stops measuring the target and starts measuring the neighbourhood.
-SNAP_AUTO_FRAC = 0.32    # of the blob's shorter side
+# than a trailing limb — so it scales with how thick the target actually is. A
+# circle any larger stops measuring the target and starts measuring the
+# neighbourhood; any smaller and it just tracks the noisiest pixel.
+#
+# Thickness is taken as 2 x area / perimeter, which is the width of the shape's
+# limbs rather than the size of the box around it. The bounding box is a poor
+# stand-in for anything concave: an L-shaped target 200 px across is made of
+# 40 px-wide bars, and sizing the circle from the box gave one three times too
+# big — large enough that every position scored alike and the aim stayed in the
+# empty inside corner.
+SNAP_AUTO_THICK = 0.45   # of the target's limb thickness
 SNAP_AUTO_MIN = 7        # px, screen space
 SNAP_AUTO_MAX = 70
 
@@ -205,18 +234,25 @@ def best_circle_center(
     h, w = mask.shape[:2]
     if h == 0 or w == 0 or radius <= 0:
         return None
-    search = radius * SNAP_SEARCH_MARGIN + 4
-    x0 = max(0, int(cx - search))
-    x1 = min(w, int(cx + search) + 1)
-    y0 = max(0, int(cy - search))
-    y1 = min(h, int(cy + search) + 1)
     if bounds is not None:
+        # Search the whole target, not a window around its centroid. For a
+        # concave shape the centroid can sit well off the ink — the inside
+        # corner of an L is the standard case — and a window sized from the
+        # radius then never reaches the dense part it exists to find. The
+        # answer is clamped to the target either way, so there is nothing to
+        # gain by looking at less of it.
         bx0, by0, bw, bh = bounds
         m = radius * SNAP_BOUND_MARGIN
-        x0 = max(x0, int(bx0 - m))
-        y0 = max(y0, int(by0 - m))
-        x1 = min(x1, int(bx0 + bw + m) + 1)
-        y1 = min(y1, int(by0 + bh + m) + 1)
+        x0 = max(0, int(bx0 - m))
+        y0 = max(0, int(by0 - m))
+        x1 = min(w, int(bx0 + bw + m) + 1)
+        y1 = min(h, int(by0 + bh + m) + 1)
+    else:
+        search = radius * SNAP_SEARCH_MARGIN + 4
+        x0 = max(0, int(cx - search))
+        x1 = min(w, int(cx + search) + 1)
+        y0 = max(0, int(cy - search))
+        y1 = min(h, int(cy + search) + 1)
     if x1 - x0 < 2 or y1 - y0 < 2:
         return None
     crop = mask[y0:y1, x0:x1]
@@ -283,6 +319,10 @@ class TargetTracker:
         # Where the previous frame's pick landed, so "is this the same target"
         # can be answered when the lock is switched off too.
         self._last_pick: Optional[Tuple[float, float]] = None
+        # Committed aim point, and how far the candidate may stray before it
+        # is believed. 0 disables commitment entirely.
+        self._committed: Optional[np.ndarray] = None
+        self._commit_px = 0.0
         self._dt = 1.0 / 60.0                         # smoothed detection interval
         self._track_frames = 0                        # frames on the same target
         # Target lock (screen space so it survives detect-scale changes).
@@ -292,6 +332,9 @@ class TargetTracker:
         # Bounding box of the blob matched *this* frame, in detection coords.
         # The snap is confined to it, so it can never re-aim onto a neighbour.
         self._lock_box: Optional[Tuple[int, int, int, int]] = None
+        # The matched shape itself, so the snap circle can be sized from how
+        # thick the target actually is rather than from the box around it.
+        self._lock_shape: Optional[DetectedShape] = None
         # Max-coverage snap.
         self._on_color_since: Optional[float] = None
         self._off_color_at: Optional[float] = None
@@ -303,6 +346,23 @@ class TargetTracker:
     def set_tuning(self, response: float = 1.0, floor: float = 1.0) -> None:
         self._response = max(0.05, min(4.0, response))
         self._floor = max(0.05, min(4.0, floor))
+
+    def velocity(self) -> Tuple[float, float]:
+        """Target velocity in px/s, gated by straightness (0 when vibrating).
+
+        Handed to the movement loop as a feed-forward term. An easing
+        controller is a proportional one, and a proportional controller
+        *cannot* sit on a moving target: against something travelling at a
+        constant speed it settles at a fixed distance behind, proportional to
+        its own time constant. Raising the speed or acceleration limits does
+        not touch that — they cap how fast it may correct, not how large the
+        steady-state error is — which is why the pointer trailed a moving
+        target however high those were set. Driving the pointer at the
+        target's own speed removes the error instead of chasing it.
+        """
+        gate = (self._straight - STRAIGHT_MIN) / (STRAIGHT_FULL - STRAIGHT_MIN)
+        g = max(0.0, min(1.0, gate))
+        return float(self._vel[0]) * g, float(self._vel[1]) * g
 
     def matched(self) -> bool:
         """Whether a real blob was identified this frame.
@@ -341,7 +401,9 @@ class TargetTracker:
         self._track_frames = 0
         self._lock = None
         self._lock_box = None
+        self._lock_shape = None
         self._last_pick = None
+        self._committed = None
         self._recent.clear()
         self._straight = 1.0
         self._on_color_since = None
@@ -401,6 +463,7 @@ class TargetTracker:
             # a stale box from the previous frame would confine the search to
             # where the target used to be.
             self._lock_box = None
+            self._lock_shape = None
             self._matched = False
             # An empty *follow window* is not evidence that the target left the
             # screen — only that it left this box, which is the ordinary way a
@@ -420,6 +483,7 @@ class TargetTracker:
                 return None
         else:
             self._lock_box = None      # region aiming does its own placement
+            self._lock_shape = None
             target_det = self._pick_region(
                 shapes, figure, active_region, cx, cy, r_det, part_attraction)
             if target_det is None:
@@ -482,9 +546,10 @@ class TargetTracker:
         for s in shapes:
             bw, bh = s.bbox[2], s.bbox[3]
             cands.append((s.center[0], s.center[1], math.hypot(bw, bh),
-                          s.area, s.bbox))
+                          s.area, s.bbox, s))
 
         self._lock_box = None
+        self._lock_shape = None
         self._matched = False
 
         # 1) Try to re-identify the locked target among this frame's blobs.
@@ -493,10 +558,10 @@ class TargetTracker:
             ly = (self._lock[1] - oy) * scale
             best = None
             best_d = None
-            for (px, py, diag, _area, bbox) in cands:
+            for (px, py, diag, _area, bbox, shape) in cands:
                 d = math.hypot(px - lx, py - ly)
                 if best_d is None or d < best_d:
-                    best_d, best = d, (px, py, diag, bbox)
+                    best_d, best = d, (px, py, diag, bbox, shape)
             if best is not None:
                 # Allow more drift for big blobs, fast targets, and stale locks.
                 # The allowance for a stale lock is capped: it grew without
@@ -514,6 +579,7 @@ class TargetTracker:
                     self._lock = (ox + best[0] * inv, oy + best[1] * inv)
                     self._lock_seen = now
                     self._lock_box = best[3]
+                    self._lock_shape = best[4]
                     self._matched = True
                     # A match that had to stretch a long way is a different
                     # object, not the same one moving — say so, so the
@@ -535,16 +601,17 @@ class TargetTracker:
         best = None
         best_s = None
         best_diag = 0.0
-        for (px, py, diag, area, bbox) in cands:
+        for (px, py, diag, area, bbox, shape) in cands:
             d = math.hypot(px - cx, py - cy)
             if r_det is not None and d > r_det:
                 continue
             score = d / (max(area, 1.0) ** 0.15)
             if best_s is None or score < best_s:
-                best_s, best, best_diag = score, (px, py, bbox), diag
+                best_s, best, best_diag = score, (px, py, bbox, shape), diag
         if best is None:
             return None, False
         self._lock_box = best[2]
+        self._lock_shape = best[3]
         self._matched = True
         if lock_enabled:
             self._lock = (ox + best[0] * inv, oy + best[1] * inv)
@@ -628,8 +695,14 @@ class TargetTracker:
         if snap_radius > 0:
             r_screen = float(snap_radius)
         else:
-            short_det = max(1.0, float(min(box[2], box[3])))
-            r_screen = SNAP_AUTO_FRAC * short_det / max(scale, 1e-6)
+            r_screen = SNAP_AUTO_MIN
+            shape = self._lock_shape
+            if shape is not None:
+                perim = float(cv2.arcLength(shape.contour, True))
+                if perim > 1e-6:
+                    thick_det = 2.0 * float(shape.area) / perim
+                    r_screen = (SNAP_AUTO_THICK * thick_det
+                                / max(scale, 1e-6))
             r_screen = max(SNAP_AUTO_MIN, min(SNAP_AUTO_MAX, r_screen))
         self._snap_radius_used = r_screen
         return r_screen * scale
@@ -691,6 +764,7 @@ class TargetTracker:
             self._recent.clear()
             self._recent.append(raw.copy())
             self._straight = 1.0
+            self._committed = raw.copy()
             return int(round(raw[0])), int(round(raw[1]))
 
         dt = now - self._prev_t
@@ -724,20 +798,22 @@ class TargetTracker:
         self._update_straightness(raw)
 
         speed = self.speed()
+        dt_f = dt if dt > 1e-3 else self._dt
 
         # Deadband: a static target that wiggles by a pixel of detection noise
-        # holds perfectly still instead of trembling.
+        # holds perfectly still instead of trembling. Still routed through
+        # commitment, so the committed point cannot drift away from what is
+        # being returned and jump when the deadband next opens.
         delta = raw - self._smoothed
         if float(np.hypot(delta[0], delta[1])) <= DEADBAND_PX \
                 and speed < LEAD_DEADZONE:
             self._vel *= 0.8
-            return (int(round(self._smoothed[0])),
-                    int(round(self._smoothed[1])))
+            out = self._commit(self._smoothed, dt_f, speed)
+            return int(round(out[0])), int(round(out[1]))
 
         # One-euro follow: the cutoff rises with target speed, so a resting
         # target is smoothed hard (steady, precise) and a fast one is followed
         # almost immediately (little lag) — without the caller choosing.
-        dt_f = dt if dt > 1e-3 else self._dt
         cutoff = ((MIN_CUTOFF_BASE + self._ema * MIN_CUTOFF_SPAN) / self._floor
                   + CUTOFF_BETA * speed * self._response)
         self._smoothed = self._smoothed + _alpha(dt_f, cutoff) * (
@@ -761,4 +837,36 @@ class TargetTracker:
                 lead = lead * (LEAD_MAX / n)
             out = self._smoothed + lead
 
+        out = self._commit(out, dt_f, speed)
         return int(round(out[0])), int(round(out[1]))
+
+    # ------------------------------------------------------------- commitment
+    def _commit(self, candidate: np.ndarray, dt: float,
+                speed: float) -> np.ndarray:
+        """Hold a decided aim point until the target has actually moved.
+
+        Filters on how far the candidate has strayed rather than how fast it is
+        travelling — see the notes by :data:`COMMIT_TAU_HOLD`. Inside the zone
+        the committed point creeps, so a slow genuine drift is still followed
+        and the aim never sticks permanently to a stale spot; outside it, it
+        follows at once.
+        """
+        zone = self._commit_px
+        if zone <= 0.0:
+            self._committed = candidate.copy()
+            return candidate
+        # A target that is really travelling needs no help deciding.
+        fade = max(0.0, 1.0 - speed / COMMIT_FADE_SPEED)
+        zone *= fade
+        if self._committed is None or zone <= 0.0:
+            self._committed = candidate.copy()
+            return candidate
+        err = candidate - self._committed
+        d = float(np.hypot(err[0], err[1]))
+        tau = COMMIT_TAU_HOLD if d <= zone else COMMIT_TAU_FOLLOW
+        self._committed = self._committed + err * _alpha(dt, 1.0 /
+                                                         (2.0 * math.pi * tau))
+        return self._committed
+
+    def set_commit_px(self, px: float) -> None:
+        self._commit_px = max(0.0, float(px))

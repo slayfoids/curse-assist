@@ -180,10 +180,28 @@ PAGE = r"""<!doctype html>
     align-items:center;column-gap:10px;row-gap:5px;margin:12px 0}
   .row label{grid-column:1;grid-row:1;min-width:0;color:var(--fg);font-size:13px;
     overflow-wrap:break-word;hyphens:auto}
-  .row .val{grid-column:2;grid-row:1;justify-self:end;min-width:44px;
-    text-align:right;
-    font-variant-numeric:tabular-nums;color:#fff;font-weight:700;font-size:13px}
+  /* The number is an input, not a label: a slider is a poor way to hit an
+     exact value, and every one of these is a number somebody may want to type
+     or copy between machines. */
+  .row .val{grid-column:2;grid-row:1;justify-self:end;width:74px;min-width:0;
+    text-align:right;background:var(--field);border:1px solid var(--edge);
+    border-radius:8px;padding:4px 7px;
+    font:700 13px/1.2 inherit;font-variant-numeric:tabular-nums;color:#fff;
+    outline:0;transition:.15s;-moz-appearance:textfield}
+  .row .val::-webkit-outer-spin-button,
+  .row .val::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  .row .val:hover{border-color:var(--edge2)}
+  .row .val:focus{border-color:var(--a1);box-shadow:0 0 0 3px rgba(168,85,247,.2)}
+  .row .val.bad{border-color:var(--off);box-shadow:0 0 0 3px rgba(255,92,73,.18)}
   .row input[type=range]{grid-column:1/-1;grid-row:2;width:100%}
+  /* Recommended-value chip, shown when the setting is away from it. */
+  .rec{grid-column:1/-1;grid-row:3;justify-self:start;margin-top:-2px;
+    font-size:11px;color:var(--muted2);background:none;border:0;padding:0;
+    cursor:pointer;text-align:left}
+  .rec b{color:var(--a1);font-weight:600}
+  .rec:hover b{text-decoration:underline}
+  .rec.at{color:var(--muted2);cursor:default}
+  .rec.at b{color:var(--muted2);text-decoration:none}
   input[type=range]{-webkit-appearance:none;appearance:none;width:100%;
     min-width:0;height:6px;
     border-radius:999px;outline:0;cursor:pointer;
@@ -481,6 +499,14 @@ PAGE = r"""<!doctype html>
     <div class="toggle"><span>Audio cues<br><small>2 high beeps = on · 2 low = off</small></span>
       <label class="switch"><input type="checkbox" data-key="audio_cues">
       <span class="track"></span></label></div>
+    <div id="volRow">
+      <div class="row"><label>Cue volume</label>
+        <input type="range" data-key="audio_volume" min="0" max="100" step="5">
+        <span class="val"></span></div>
+      <div class="btns" style="margin-top:-2px">
+        <button class="btn mini" onclick="act('test_cue')">🔊 Test</button>
+      </div>
+    </div>
     <div class="hint" id="actHint"></div>
   </div>
 
@@ -499,6 +525,12 @@ PAGE = r"""<!doctype html>
   </div>
 
   <div class="card s3" data-tab="guide" style="animation-delay:.07s"><h2><span class="ico">◈</span>Fine tracking</h2>
+    <div class="row"><label>Aim lock-in</label>
+      <input type="range" data-key="aim_commit_px" min="0" max="40" step="1">
+      <span class="val"></span></div>
+    <div class="row"><label>Follow speed</label>
+      <input type="range" data-key="velocity_follow" min="0" max="1.5" step="0.05">
+      <span class="val"></span></div>
     <div class="row"><label>Motion response</label>
       <input type="range" data-key="motion_response" min="0.2" max="3" step="0.1">
       <span class="val"></span></div>
@@ -515,6 +547,15 @@ PAGE = r"""<!doctype html>
       <input type="range" data-key="max_accel" min="0" max="400000" step="10000">
       <span class="val"></span></div>
     <div class="hint">
+      <b>Aim lock-in</b> — how far the detected point may wander before the aim
+      is moved. This is the one that stops the aim marker dancing: the others
+      react to <i>speed</i>, and detection noise looks fast to them, so they
+      can't tell it apart from movement. It fades out on a target that is
+      really travelling, so it never costs you tracking.<br>
+      <b>Follow speed</b> — drive the pointer at the target's own speed, not
+      just toward it. This is what stops it sitting permanently behind a moving
+      target. 1.00 fully matches; lower it only if it feels like it leads too
+      much.<br>
       <b>Motion response</b> — how readily tracking opens up as the target moves
       (higher = less lag on fast movement).<br>
       <b>Jitter floor</b> — how hard a <i>still</i> target is filtered
@@ -598,11 +639,12 @@ PAGE = r"""<!doctype html>
       <button data-mode="off">Off</button>
     </div>
     <div class="row" id="dwellRow"><label>Dwell time</label>
-      <input type="range" data-key="dwell_ms" min="50" max="1500" step="25">
+      <input type="range" data-key="dwell_ms" min="0" max="1500" step="25">
       <span class="val"></span></div>
     <div class="row"><label>Click radius</label>
-      <input type="range" data-key="click_radius" min="5" max="80" step="1">
+      <input type="range" data-key="click_radius" min="3" max="200" step="1">
       <span class="val"></span></div>
+    <div class="roi-now" id="clickNow" style="margin:4px 0 8px">—</div>
     <div class="toggle" id="repeatRow"><span>Repeat clicks<br><small>auto-fire while on target</small></span>
       <label class="switch"><input type="checkbox" data-key="click_repeat">
       <span class="track"></span></label></div>
@@ -815,9 +857,61 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 let dragging=false, focused=null;
 
 function fmt(v,step){return (parseFloat(step)<1)?parseFloat(v).toFixed(2):(''+Math.round(v));}
+/* Assign first, then read back: a range input snaps to its step, so `el.value`
+   after assignment is the value that will actually be used. Showing what was
+   typed instead of what was applied left the box reading 0.37 next to a slider
+   sitting on 0.35. Returns the applied value so callers can send that. */
 function setSlider(el,v){el.value=v;const min=+el.min,max=+el.max;
-  el.style.setProperty('--p',((v-min)/(max-min)*100)+'%');
-  el.closest('.row').querySelector('.val').textContent=fmt(v,el.step);}
+  const av=parseFloat(el.value);
+  el.style.setProperty('--p',((av-min)/(max-min)*100)+'%');
+  const box=el.closest('.row').querySelector('.val');
+  if(box&&document.activeElement!==box){box.value=fmt(av,el.step);
+    box.classList.remove('bad');}
+  markRec(el);return av;}
+
+/* ---- recommended values --------------------------------------------------
+   Every setting says what it should normally be, and clicking the note puts it
+   back. Defaults alone don't communicate this: once someone has dragged six
+   sliders looking for a fix, nothing on screen says which ones were fine to
+   begin with, and "reset everything" is too blunt to be the only way back. */
+const REC={
+  smoothness:[0.22,"smooth but responsive"],
+  max_speed:[25000,"fast enough for anything on screen"],
+  target_ema:[0.45,"steady without lagging"],
+  motion_response:[1.0,"balanced"],
+  jitter_floor:[1.0,"balanced"],
+  aim_commit_px:[10,"holds the aim through detection noise"],
+  velocity_follow:[1.0,"fully match a moving target's speed"],
+  precision_px:[40,"gentle arrival"],
+  precision_slow:[0.55,"gentle arrival"],
+  max_accel:[300000,"only clips genuine flings"],
+  pointer_gain:[1.0,"leave alone — it measures your mouse itself"],
+  dwell_ms:[0,"click as soon as it arrives"],
+  click_radius:[25,"forgiving without clicking early"],
+  click_interval_ms:[120,"about 8 clicks a second"],
+  sensitivity:[12,"tight enough to pick one thing out"],
+  min_contour_area:[60,"ignores specks, keeps real targets"],
+  detect_scale:[0.5,"half size — fast, still accurate"],
+  scan_fps:[0,"auto: twice your monitor's refresh"],
+  pull_radius:[250,"a comfortable circle around the pointer"],
+  overlay_radius:[0,"match the pull radius"],
+  snap_radius:[0,"auto: sized from the target"],
+  snap_after_ms:[0,"snap straight away"],
+  part_attraction:[0.85,"aims at the part, stays steady"],
+  audio_volume:[55,"audible without being startling"],
+};
+function markRec(el){
+  const key=el.dataset.key, rec=REC[key]; if(!rec)return;
+  const row=el.closest('.row'); let chip=row.querySelector('.rec');
+  if(!chip){chip=document.createElement('button');chip.className='rec';
+    chip.onclick=()=>{setKey(key,setSlider(el,rec[0]));};
+    row.appendChild(chip);}
+  const step=parseFloat(el.step)||1;
+  const at=Math.abs(parseFloat(el.value)-rec[0])<step/2;
+  chip.classList.toggle('at',at);
+  chip.innerHTML=at?('✓ recommended — '+rec[1])
+    :('recommended <b>'+fmt(rec[0],el.step)+'</b> — '+rec[1]+' · click to set');
+}
 
 async function post(url,body){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
   body:JSON.stringify(body)}).then(r=>r.json());}
@@ -826,10 +920,41 @@ async function act(a,extra={}){return post('/api/action',Object.assign({action:a
 
 function flash(t){$('#msg').textContent=t;}
 
-// wire sliders
+// wire sliders, and give each one a typable number box beside it
 $$('input[type=range]').forEach(el=>{
   el.addEventListener('input',()=>{setSlider(el,el.value);dragging=true;});
   el.addEventListener('change',()=>{dragging=false;setKey(el.dataset.key,parseFloat(el.value));});
+  const row=el.closest('.row'); if(!row)return;
+  const old=row.querySelector('span.val');
+  const box=document.createElement('input');
+  box.type='number'; box.className='val';
+  box.min=el.min; box.max=el.max; box.step=el.step;
+  if(old)old.replaceWith(box); else row.appendChild(box);
+  /* Typed values are clamped rather than rejected, and only committed on
+     blur/Enter — validating mid-keystroke would fight anyone typing "100"
+     one digit at a time. */
+  const commit=()=>{
+    const lo=+el.min, hi=+el.max;
+    let v=parseFloat(box.value);
+    if(!isFinite(v)){box.value=fmt(el.value,el.step);box.classList.remove('bad');return;}
+    v=Math.min(hi,Math.max(lo,v));
+    const applied=setSlider(el,v);
+    box.value=fmt(applied,el.step);      // show what landed, not what was typed
+    setKey(el.dataset.key,applied); box.classList.remove('bad');
+  };
+  box.addEventListener('input',()=>{
+    const v=parseFloat(box.value);
+    box.classList.toggle('bad',box.value!==''&&
+      (!isFinite(v)||v<+el.min||v>+el.max));
+  });
+  box.addEventListener('change',commit);
+  box.addEventListener('blur',commit);
+  box.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){commit();box.blur();}
+    if(e.key==='Escape'){box.value=fmt(el.value,el.step);box.blur();}
+  });
+  box.addEventListener('focus',()=>focused=box);
+  box.addEventListener('blur',()=>{if(focused===box)focused=null;});
 });
 // wire toggles
 $$('input[type=checkbox][data-key]').forEach(el=>{
@@ -1169,9 +1294,24 @@ function render(){
     : `<b>Auto</b> — sized from the target itself (about a third of its narrow `+
       `side). This used to borrow the field-of-view circle, which was far too `+
       `big and dragged the aim toward whatever else was nearby.`;
-  $('#clickHint').textContent=cm==='dwell'?'Clicks after holding on target.':
-    cm==='trigger'?'Press the trigger key to click instantly.':
+  $('#clickHint').textContent=cm==='dwell'
+    ?(S.dwell_ms>0?'Clicks after resting on target for '+S.dwell_ms+' ms.'
+                  :'Clicks the moment it arrives on target.')
+    :cm==='trigger'?'Press the trigger key to click instantly.':
     'No auto-click — click manually.';
+  // Live distance vs the radius: a radius set too small to ever be reached is
+  // the reason a dwell click "just doesn't happen sometimes", and it is
+  // invisible unless the numbers are put side by side.
+  const cn=$('#clickNow'), cd=S.click_distance;
+  if(cn) cn.innerHTML = !S.pull_enabled
+    ? 'Turn guidance on to see how close the pointer is getting.'
+    : (cd>S.click_radius
+        ? `Pointer is <b style="color:#ff9a8a">${cd} px</b> from the target, `+
+          `outside the <b>${S.click_radius} px</b> click radius — it won't `+
+          `click until it gets closer, or you widen the radius.`
+        : `Pointer is <b>${cd} px</b> from the target, inside the `+
+          `<b>${S.click_radius} px</b> radius.`);
+  $('#volRow').style.display=S.audio_cues?'':'none';
   renderRegions();renderColors();renderConfigs();
   if(S.eyedropping) flash('Eyedropper armed — click any pixel on screen (Esc cancels)');
 }
@@ -1203,7 +1343,10 @@ const TIPS={
   pointer_gain_auto:"Read your Windows mouse speed and acceleration, and keep checking what your moves actually do. Leave this on — it is what keeps the pull the same on a slow mouse and a fast one.",
   show_roi:"Draw a dashed outline on screen showing the area being watched, so you can see it rather than work it out from numbers.",
   snap_radius:"How big a circle to look for the densest colour in. Leave at 0 to size it from the target automatically.",
-  dwell_ms:"How long to rest on something before it clicks for you.",
+  dwell_ms:"How long to rest on something before it clicks for you. Set 0 to click the instant it arrives.",
+  aim_commit_px:"How far the target can wobble before the aim actually moves. Raise it if the aim marker keeps twitching; lower it if the aim feels like it lags on small movements. It switches itself off while a target is really moving.",
+  velocity_follow:"Move the pointer at the same speed the target is moving, instead of only chasing it. This is what stops it sitting just behind something that keeps moving. Leave at 1.00.",
+  audio_volume:"How loud the beeps are. Press Test to hear it.",
   click_radius:"How close the pointer must be to count as resting on the target. Bigger is more forgiving.",
   click_interval_ms:"When repeat clicking is on, the gap between each click.",
   dwell_grace_ms:"If the colour flickers for a moment, keep counting instead of starting over. Raise it if clicks don't happen on a jumpy picture.",
@@ -1258,6 +1401,15 @@ function attachTips(){
    Kept here so the panel is the single place a user looks; each entry says
    what changed in terms of what they would have noticed. */
 const NOTES=[
+ {v:"1.0.9",t:"Keeps up with movement, aim holds still, instant clicks",items:[
+   ["It no longer trails behind things that move","The pointer steered purely by how far off it was, and something steering that way physically cannot sit on a moving target — it settles at whatever distance produces just enough speed to keep pace. That's why turning up Max speed and Accel limit never helped: they limit how fast it corrects, not how far behind it settles. It now also travels at the target's own speed. Lag at 400px/s went from 9.4px to 4.4px, and on a moving figure with messy edges from 9.7px to 4.1px."],
+   ["The aim marker stops dancing","Every filter in here reacted to how fast the target was moving, and camera noise looks fast to all of them — so on a figure with ragged edges the aim wandered 9px and changed 20 times a second while it stood perfectly still, and no combination of smoothness, steadiness or jitter floor got it under 6px. The new Aim lock-in reacts to how far the point has strayed instead, which is what actually tells noise apart from movement: 9px of wander became 1px, and 20 changes a second became 1. It switches itself off when a target is genuinely moving."],
+   ["Dwell can click instantly","The minimum was 50ms and even that waited an extra frame. Set it to 0 and it clicks the moment it arrives."],
+   ["Dwell clicks that just never happened","The jitter above was pushing the pointer in and out of the click radius many times a second, restarting the countdown each time. Leaving now takes a bigger movement than arriving did, so it rides out the wobble. The panel also shows how far the pointer actually is from the target next to your radius, so a radius that's too small to ever work is something you can see."],
+   ["Type any setting instead of dragging for it","Every slider now has a box next to it. Type an exact number, paste one in, or read one off to send to a friend. Out-of-range numbers are pulled back into range rather than refused."],
+   ["Every setting tells you what it should be","Each one shows a recommended value and why, and clicking it puts it back — so after hunting through six sliders you can see which ones were fine all along."],
+   ["Volume control for the beeps","They were fixed at whatever Windows felt like, which was startling on some machines. There's a volume slider and a Test button now."],
+ ]},
  {v:"1.0.8",t:"Lock lag and lock spasms were the same bug · share codes",items:[
    ["'Still a bit of latency' and 'lock breaks it' were one problem","When the target you were locked on wasn't spotted in a frame, the aim carried on pointing at where it used to be for nearly half a second before looking anywhere else. Measured, the pointer took 418ms to react to a target appearing somewhere new — against 10ms with lock switched off. On screen that looks like the aim freezing and then lurching across, which is both complaints at once. It now waits 0.06s when there's something else visible to aim at, and reaction time is 63ms."],
    ["It no longer throws the pointer past a target that isn't moving","A figure that keeps breaking into pieces behind cover makes the detected point flip between two spots, which reads as a target sprinting at 900px/s. The aim was then thrown 23px past both places it was flipping between. It now checks whether the target is actually *going* somewhere before leading it. Peak pointer speed in that situation dropped from 3474px/s to 1973px/s — the same as with lock off."],

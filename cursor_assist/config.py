@@ -120,6 +120,8 @@ class AppState:
     activation_mode: str = "toggle"
     hotkey_hold: str = "MB4"         # key or mouse button held in "hold" mode
     audio_cues: bool = True          # two high beeps = on, two low beeps = off
+    audio_volume: int = 55           # 0-100; cues are synthesised so they can
+                                     # be turned down rather than only off
     auto_click_enabled: bool = True  # (legacy) dwell-click master enable
     # How clicks fire: "dwell" (auto after hovering), "trigger" (press the
     # trigger key to click instantly), or "off" (manual clicks only).
@@ -139,6 +141,24 @@ class AppState:
     # How hard a *stationary* target is filtered. Higher = calmer pointer on
     # a still target, at the cost of a beat more lag when it starts moving.
     jitter_floor: float = 1.0        # multiplier on the resting cutoff
+
+    # Aim commitment ("decide and hold"). How far the detected point may stray
+    # before the aim is moved, in screen px. Every other filter here keys off
+    # *speed*, and detection noise defeats that because noise looks fast — on
+    # an animating figure the aim wandered 9 px and changed 20 times a second
+    # while the figure stood still, and no combination of the other settings
+    # brought it under 6 px. This one keys off *displacement*, which is what
+    # actually separates noise from movement, and it fades out entirely once
+    # the target is genuinely travelling. 0 disables it.
+    aim_commit_px: int = 10
+
+    # Drive the pointer at the target's own speed as well as toward it. An
+    # easing controller is proportional, and a proportional controller settles
+    # a fixed distance *behind* anything moving at a constant speed — raising
+    # the speed or acceleration limits cannot fix that, which is why the
+    # pointer trailed a moving target however high they were set. 0 = off,
+    # 1 = fully match the target's speed.
+    velocity_follow: float = 1.0
 
     # Precision zone: within this many px of the target the pointer eases off
     # and steadies, so it settles instead of darting across the last few px
@@ -287,6 +307,7 @@ class AppState:
     # identical from outside and feel very different: a pointer that has frozen
     # on a remembered position is the thing users describe as lag.
     target_holding: bool = False
+    click_distance: float = 0.0      # px from pointer to target (read-only)
     pointer_gain_measured: float = 1.0   # learned OS pointer gain (read-only)
     pointer_profile: str = ""            # e.g. "6/11 (1x) + enhance precision"
     pointer_resolution: float = 1.0      # px per device unit (read-only)

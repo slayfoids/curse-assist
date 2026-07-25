@@ -118,6 +118,7 @@ class AssistController:
         self._target: Optional[Tuple[int, int]] = None
         self._target_at = 0.0
         self._target_speed = 0.0  # px/s, set by detection, read by movement
+        self._target_vel = (0.0, 0.0)   # px/s vector, for velocity feed-forward
         self._last_trigger = 0.0  # cooldown for the instant trigger click
         self._gain_published = 0.0
 
@@ -338,6 +339,7 @@ class AssistController:
                 self._tracker.set_ema(snap.target_ema)
                 self._tracker.set_tuning(response=snap.motion_response,
                                          floor=snap.jitter_floor)
+                self._tracker.set_commit_px(snap.aim_commit_px)
                 min_area = max(1, int(snap.min_contour_area * scale * scale))
                 shapes, mask = find_shapes(small, snap.colors,
                                            snap.detect_thin_border, min_area)
@@ -364,6 +366,7 @@ class AssistController:
                 )
                 self._publish(target)
                 self._target_speed = self._tracker.speed()
+                self._target_vel = self._tracker.velocity()
                 self._state.set("last_target_found", target is not None)
                 self._state.set("target_holding",
                                 target is not None
@@ -468,6 +471,7 @@ class AssistController:
             prec = float(self._state.get("precision_px"))
             if prec > 0:
                 prec *= max(0.0, 1.0 - sp / PRECISION_FADE_SPEED)
+            vf = max(0.0, min(2.0, float(self._state.get("velocity_follow"))))
 
             cursor_pos = self._glider.step(
                 target_screen=target,
@@ -479,7 +483,9 @@ class AssistController:
                 precision_slow=float(self._state.get("precision_slow")),
                 gain_scale=float(self._state.get("pointer_gain")),
                 auto_gain=bool(self._state.get("pointer_gain_auto")),
+                target_vel=(self._target_vel[0] * vf, self._target_vel[1] * vf),
             )
+            self._state.set("click_distance", round(self._dwell.distance, 1))
             self._dwell.update(
                 cursor_screen=cursor_pos,
                 target_screen=target,

@@ -9,6 +9,68 @@ tell which build you are running.
 
 ---
 
+## v1.0.9
+
+**Stops trailing moving targets, stops the aim dancing, clicks instantly, and
+every setting is now typable with a recommended value.**
+
+- **The pointer no longer sits behind a moving target.** The movement loop was
+  purely proportional — it steers by how far off it is — and a proportional
+  controller *cannot* sit on something moving at a constant speed. It settles
+  wherever the error is large enough to generate exactly the speed needed to
+  keep up, which is a fixed distance behind. Raising **Max speed** or **Accel
+  limit** could never fix that: they cap how fast it may correct, not how big
+  the steady-state error is. The loop now also drives the pointer at the
+  target's own velocity (**Follow speed**), so the error is removed rather than
+  traded against. Measured mean lag: **11.1 → 8.6 px** at 200 px/s, **9.4 →
+  4.4** at 400, **8.7 → 5.4** at 700. On a noisy animating figure, 9.7 → 4.1 px.
+  - The old position lead was doing a rough version of the same job, so it has
+    been cut back to cover only how stale a detection is by the time it is
+    acted on. Left as it was, the two compensated for the same lag twice: 30 px
+    of lag and 36 px of overshoot at 1000 px/s, against 8.9 / 13 rebalanced.
+  - Combined with the scan-rate work, tracking lag against a 500 px/s target is
+    now **2.1 px at 240 scans/s**, from 12.3 px originally.
+- **The aim point holds still.** Every existing filter keys off *speed*, and
+  detection noise defeats all of them because noise looks fast. On an animating
+  figure with ragged edges the aim wandered **9 px and changed 20 times a
+  second** while the figure stood still — and smoothness, target steadiness,
+  jitter floor and the precision zone could not get it below 6 px between them,
+  because they were all adjusting the wrong variable. New **Aim lock-in**
+  filters on *displacement* instead, which is what actually separates noise
+  from movement: the aim holds until the target has genuinely gone somewhere.
+  Same scene: **9 px → 1 px, 20 changes/s → 1**. It fades out entirely on a
+  target that is really travelling, so it costs nothing while tracking.
+- **Dwell clicks are instant when you ask for instant.** The minimum was 50 ms
+  and even 0 waited a frame; 0 now fires the moment the pointer arrives.
+- **Dwell clicks that never happened.** The click radius was a single
+  threshold, so the aim jitter above had the pointer crossing in and out of it
+  many times a second, restarting the timer each time. Leaving now takes a
+  larger excursion than entering, so a dwell survives the noise. The panel also
+  shows the live distance to the target against the radius, so a radius set too
+  small to ever be satisfied is a number you can see rather than a mystery.
+  The radius range is now 3–200 px (was 5–80).
+- **The snap circle is sized from the target's thickness**, not its bounding
+  box. An L-shaped target 200 px across is made of 40 px bars, and sizing from
+  the box gave a circle three times too big — so big that every position scored
+  alike and the aim stayed in the empty inside corner. It also now searches the
+  whole target rather than a window around its centroid, which for a concave
+  shape never reached the ink at all.
+- **Every slider is typable.** Each one has a number box beside it: type an
+  exact value, paste one, or read one off to send to someone. Out-of-range
+  entries are clamped rather than rejected, invalid text is marked as you type
+  and reverts on blur, and the box always shows the value that was actually
+  applied.
+- **Every setting says what it should be.** Each control carries a recommended
+  value and a one-line reason, and clicking it puts the setting back. Once
+  you've dragged six sliders looking for a fix, nothing on screen used to say
+  which ones were fine to begin with.
+- **Cue volume.** `winsound.Beep` has no volume control, so the cues were
+  all-or-nothing and startling on some machines. They are now synthesised as
+  tones in memory, which makes volume a multiplier on the samples — with a
+  **Cue volume** slider and a Test button. Nothing is written to disk.
+- The status tile distinguishes **holding** from **locked**; the pointer
+  calibration readout no longer waits for guidance to be switched on.
+
 ## v1.0.8
 
 **The lock's latency and its "spasms" were the same bug. Plus share codes.**

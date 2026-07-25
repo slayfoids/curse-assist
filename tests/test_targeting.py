@@ -3,6 +3,7 @@
 import math
 import time
 
+import cv2
 import numpy as np
 import pytest
 
@@ -199,21 +200,50 @@ def test_snap_still_moves_the_aim_onto_the_densest_part():
     assert after < before - 20        # meaningfully closer to the mass
 
 
+def _auto_radius(shape, mask, scale=1.0):
+    t = TargetTracker(ema=1.0)
+    x, y, w, h = shape.bbox
+    t.pick(shapes=[shape], figure=None, active_region="Torso",
+           cursor_screen=(x + w // 2, y + h // 2), capture_origin=(0, 0),
+           scale=scale, mask=mask, snap_enabled=True, snap_radius=0,
+           snap_after_ms=0, lock_enabled=True)
+    return t._snap_radius_used
+
+
 def test_auto_snap_radius_scales_with_the_target():
-    """Radius 0 sizes the circle from the blob, not from the user's FOV."""
-    scale = 1.0
+    """Radius 0 sizes the circle from the target, not from the user's FOV."""
     mask = np.zeros((600, 600), dtype=np.uint8)
-    for box, expect in (((100, 100, 40, 90), 40 * 0.32),
-                        ((100, 100, 160, 300), 160 * 0.32)):
-        x, y, w, h = box
+    radii = []
+    for (x, y, w, h) in ((100, 100, 40, 90), (100, 100, 160, 300)):
         mask[:] = 0
         mask[y:y + h, x:x + w] = 255
-        t = TargetTracker(ema=1.0)
-        t.pick(shapes=[blob(x, y, w, h)], figure=None, active_region="Torso",
-               cursor_screen=(x + w // 2, y + h // 2), capture_origin=(0, 0),
-               scale=scale, mask=mask, snap_enabled=True, snap_radius=0,
-               snap_after_ms=0, lock_enabled=True)
-        assert abs(t._snap_radius_used - expect) < 1.0
+        r = _auto_radius(blob(x, y, w, h), mask)
+        # 2 * area / perimeter is the shape's limb thickness.
+        thick = 2.0 * (w * h) / (2.0 * (w + h))
+        assert abs(r - targeting.SNAP_AUTO_THICK * thick) < 1.5, (w, h, r)
+        radii.append(r)
+    assert radii[1] > radii[0] * 2          # a bigger target, a bigger circle
+
+
+def test_auto_snap_radius_uses_thickness_not_the_bounding_box():
+    """An L-shape is 200 px across but made of 40 px bars.
+
+    Sizing from the bounding box gave a circle three times too big — so big
+    that every placement scored alike and the aim stayed in the empty inside
+    corner of the L, which is exactly where it must not be.
+    """
+    mask = np.zeros((500, 500), dtype=np.uint8)
+    mask[100:300, 100:140] = 255          # vertical bar, 40 wide
+    mask[260:300, 100:300] = 255          # horizontal bar, 40 tall
+    contour, _ = cv2.findContours(mask, cv2.RETR_LIST,
+                                  cv2.CHAIN_APPROX_SIMPLE)
+    shape = DetectedShape(contour=contour[0],
+                          bbox=cv2.boundingRect(contour[0]),
+                          area=float(cv2.contourArea(contour[0])),
+                          kind="poly", center=(180.0, 200.0))
+    r = _auto_radius(shape, mask)
+    assert 10 < r < 30, r                 # sized to the bar, not to the box
+    assert r < 0.32 * 200 / 2             # far under the old box-based figure
 
 
 def test_snap_is_skipped_when_no_blob_was_matched_this_frame():

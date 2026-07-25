@@ -1,123 +1,111 @@
-# Curse v1.0.8
+# Curse v1.0.9
 
-**The lock's latency and its "spasms" turned out to be the same bug. Plus
-configs you can share with other people.**
+**Keeps up with moving targets, the aim marker holds still, dwell clicks
+instantly — and every setting is typable with a recommended value.**
 
-Download **`CursorAssist-v1.0.8.exe`** below. Single file, nothing to install —
+Download **`CursorAssist-v1.0.9.exe`** below. Single file, nothing to install —
 it carries its own Python, OpenCV and numpy. Windows 10/11, 64-bit.
 
 Your existing settings carry over.
 
 ---
 
-## 🔒 "Still a bit of latency" and "lock breaks it" were one problem
+## 🏃 It no longer trails behind things that move
 
-When the target you were locked onto wasn't spotted in a given frame, the aim
-kept pointing at **where it used to be** for the full grace period before it
-would look anywhere else. Measured end to end:
+The pointer steered purely by *how far off it was*. Something steering that way
+physically cannot sit on a target moving at a constant speed — it settles
+wherever the error is big enough to generate exactly the speed needed to keep
+pace, which is a fixed distance behind.
 
-| | reaction to a target appearing somewhere new |
-|---|---|
-| lock **on** (as shipped) | **418 ms** |
-| lock **off** | 10 ms |
-| lock on, after this release | **63 ms** |
+That is why turning up **Max speed** and **Accel limit** never helped: those cap
+how fast it may *correct*, not how far behind it *settles*. No value of either
+changes the answer.
 
-The delay tracked the grace constant exactly — 0.40 s of grace, 419 ms of
-reaction. And what half a second of frozen aim followed by a lurch across the
-screen *looks* like is the assist spasming. Both reports, one cause.
+The movement loop now also drives the pointer at the target's own velocity
+(**Follow speed**), removing the error instead of trading against it:
 
-- The grace now depends on what is actually on screen: **0.06 s** when other
-  targets are visible — continuing to aim at a memory while a real target sits
-  there is a refusal to look at evidence — and **0.18 s** when nothing at all
-  was detected and there is nothing better to aim at anyway.
-- An empty **follow window** no longer counts as "the target vanished". It
-  means the target left that box, which is simply what moving targets do. The
-  window now widens on each consecutive miss instead of staring at the one
-  place the target is known not to be. Target-follow's share of the reaction
-  time went from **136 ms to 5 ms**.
-
-## 🎯 It no longer throws the pointer past a target that isn't moving
-
-A velocity estimate tells you how fast the detected *point* is moving, not
-whether the target is going anywhere. A figure that keeps breaking into two
-pieces behind cover makes that point flip between two centroids — which reads
-as **900 px/s from something standing still**. The lead then threw the pointer
-23 px *beyond the range of both positions it was flipping between*.
-
-Speed is now gated by **straightness** — net displacement over distance
-travelled, across a short window. Real travel scores near 1; vibration scores
-near 0 because the path cancels itself out. Everything that reacts to speed
-uses the gated figure.
-
-| scenario | peak pointer speed before | after |
+| target speed | lag before | lag now |
 |---|---|---|
-| target repeatedly splits in two | **3474 px/s** | **1973 px/s** (same as lock off) |
-| fast target passing a decoy | 2.7× the travel of lock-off | matches lock-off |
+| 200 px/s | 11.1 px | **8.6 px** |
+| 400 px/s | 9.4 px | **4.4 px** |
+| 700 px/s | 8.7 px | **5.4 px** |
+| noisy animating figure, 300 px/s | 9.7 px | **4.1 px** |
 
-All five stress scenarios now measure **identically with the lock on and off**.
+The old position-lead was doing a rough version of the same job, so it is cut
+back to cover only how stale a reading is by the time it is acted on. Left as
+it was, the two compensated for the same lag twice — 30 px of lag *and* 36 px
+of overshoot at 1000 px/s, against 8.9 / 13 once rebalanced.
 
-## 🌀 Turning the lock off had been switching off all smoothing
+Combined with the scan-rate work in 1.0.8, lag against a 500 px/s target is now
+**2.1 px at 240 scans/s**, from 12.3 px originally.
 
-Every frame reported itself as a brand-new target, so the filter, the deadband
-and the lead reset on every single frame and the pointer rode raw detection
-output. "Is this the same target?" is now answered the same way whether the
-lock is on or off — which is why the two now behave the same everywhere.
+## 🎯 The aim marker stops dancing
 
-## ⚡ Scanning faster now genuinely helps
+Every filter in the tool reacted to **how fast** the target was moving — and
+camera noise looks fast to all of them. On an animating figure with ragged
+edges the aim wandered **9 px and changed 20 times a second** while the figure
+stood perfectly still, and this is what that did to the existing settings:
 
-Most of the pipeline lag is **fixed** — smoothing and easing take the same time
-however often the screen is scanned — but the lead was weighted almost entirely
-on the detection interval. Raising the scan rate therefore *removed*
-compensation the pointer still needed:
+| setting tried | aim wander |
+|---|---|
+| defaults | 9 px |
+| jitter floor 3.0 | 6 px |
+| target steadiness 0.05 | 5 px |
+| smoothness 0.90 | 6 px |
+| precision zone 120 / slowdown 0.1 | 6 px |
 
-| tracking lag, 500 px/s target | 60 scans/s | 120 | 240 |
-|---|---|---|---|
-| before | 12.3 px | 14.8 px | **16.3 px** (worse!) |
-| after | 11.3 px | 10.0 px | **9.2 px** |
+None of them could fix it, because they were all adjusting the wrong variable.
 
-**Auto is now twice your display's refresh** — 120 a second on a 60 Hz screen.
-Matching the refresh exactly is the right answer about *information* (a screen
-shows no more than one new picture per refresh) but not about *latency*: a scan
-lands at an arbitrary point inside the refresh interval, so sampling at the
-refresh rate leaves half a frame of staleness on average, and sampling twice as
-often halves it. It is nearly free — a follow-window scan costs 0.19 ms, so
-120/s is about **2% of one core**.
+New **Aim lock-in** reacts to how far the point has *strayed* rather than how
+fast it is going — which is what actually separates noise from movement, since
+noise stays bounded and averages out while movement accumulates. Same scene:
+**9 px → 1 px of wander, 20 changes a second → 1**. It fades out entirely once a
+target is genuinely travelling, so it never costs you tracking.
 
-## 🔗 Share your setup with someone else
+## ✦ Dwell clicks: instant, and reliable
 
-Saved configs used to be a file on your PC plus a code that meant nothing on
-anyone else's. **Get share code** now produces a single string that *contains*
-the whole setup:
+- **0 ms now means 0 ms.** The minimum was 50 ms, and even that waited an extra
+  frame. Set it to 0 and it clicks the moment the pointer arrives.
+- **Clicks that just never happened.** The click radius was a single threshold,
+  so the aim jitter above pushed the pointer in and out of it many times a
+  second, restarting the countdown each time. Leaving now takes a larger
+  excursion than arriving did, so a dwell rides out the wobble.
+- The panel shows the **live distance from pointer to target** next to your
+  radius, so a radius set too small to ever be satisfied is a number you can
+  see rather than "it just doesn't click sometimes". Range widened to 3–200 px.
 
-```
-CURSE1-76WNCHjaZZDRCoMwDEV_ZeRZhk4n2l8ZoxTNbFltS1vdhvjvSzccDJ-SHnJvbrqA6KKaRVTW…
-```
+## ⌨️ Type any setting, and see what it should be
 
-- **269 characters** for a fully tuned setup, **41** for a near-default one —
-  paste it into a chat message and the other person gets your exact settings.
-  No account, no server, no internet.
-- One box takes **either** kind of code, so nobody has to know which sort they
-  were handed. Anything loaded from a share code is saved on your PC too, so
-  you can go back to it without hunting for the original message.
-- Importing lays down defaults first, so you get the **sender's** setup rather
-  than a mixture with whatever you had already changed.
-- A checksum means a code your chat app truncated says *"that code is damaged,
-  copy it again"* instead of half-loading a configuration. Decompression is
-  bounded and incoming values are type-checked before they reach the engine —
-  these arrive from other people now, so "it came out of JSON" stopped being a
-  reason to trust them.
+- **Every slider has a number box.** Type an exact value, paste one in, or read
+  one off to send to someone. Out-of-range numbers are pulled back into range
+  rather than refused, invalid text is flagged as you type and reverts, and the
+  box always shows the value that actually landed.
+- **Every setting carries a recommended value** and a one-line reason, and
+  clicking it puts the setting back. After hunting through six sliders looking
+  for a fix, nothing on screen used to tell you which ones were fine to begin
+  with.
+
+## 🔊 Volume control for the cues
+
+`winsound.Beep` has no volume, so the cues were fixed at whatever Windows chose
+— startling on some machines. They are now synthesised as tones in memory,
+which makes volume simply a multiplier on the samples. There is a **Cue
+volume** slider and a **Test** button. Nothing is written to disk.
 
 ## 🔎 Also
 
-- The status tile distinguishes **holding** from **locked**, so a pointer
-  riding out a brief detection gap looks like what it is rather than looking
-  stuck.
-- 179 automated tests, up from 159.
+- The **snap circle is sized from the target's thickness**, not its bounding
+  box. An L-shaped target 200 px across is made of 40 px bars; sizing from the
+  box gave a circle three times too big — big enough that every position scored
+  the same and the aim stayed in the empty inside corner. It now searches the
+  whole target too, which for a concave shape it previously never reached.
+- 195 automated tests, up from 179.
 
 ## Upgrading
 
-Replace the exe; settings carry over. One thing changes on purpose: **Scan
-rate** at `0` (auto) now means twice your refresh rate rather than exactly your
-refresh rate. If you would rather cap it, set the number you want explicitly.
+Replace the exe; settings carry over. Two new controls start switched on
+because they are the fixes above: **Aim lock-in** (10 px) and **Follow speed**
+(1.00), both under *Guidance → Fine tracking*. If you preferred the old feel,
+set them to 0.
 
 **Full detail:** [CHANGELOG.md](CHANGELOG.md)

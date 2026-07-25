@@ -58,8 +58,10 @@ pointer on things they want to interact with on their own screen.*
   your exact setup. No account, no server, no internet.
 - 🫨 **Tremor steadying** — optionally damp physical mouse input while the
   assist is moving so a shaky hand doesn't fight it.
+- ⌨️ **Type any setting** — every slider has a number box beside it, each with
+  a recommended value and a one-line reason you can click to restore.
 - 🧪 **Proven accuracy** — live-motion simulation suite; ≤2.5 px mean static
-  error, ~10 px tracking error at 500 px/s.
+  error, ~2 px tracking error at 500 px/s.
 
 ---
 
@@ -247,6 +249,8 @@ within which the tool offers guidance.
 | **Smoothness** | 0 = responsive, 1 = long gentle glide. Motion is frame-rate independent. |
 | **Max speed** | Cap on how fast the pointer moves (px/sec, up to 100000). Higher = keeps up with a color that moves quickly. |
 | **Target steadiness** | Smooths out detection jitter so the pointer doesn't wobble. Adaptive: the filter eases off automatically as the target speeds up, so raising this steadies a resting target without adding lag to a moving one. |
+| **Aim lock-in** | How far the detected point may stray before the aim actually moves (px). Every other filter here reacts to *speed*, and detection noise defeats them because noise looks fast — on an animating figure the aim wandered 9 px and changed 20 times a second while it stood still, and no combination of the others got it below 6 px. This one reacts to *displacement*, which is what separates noise from movement: same scene, 1 px and 1 change a second. Fades out on a target that is really travelling, so it never costs tracking. 0 = off. |
+| **Follow speed** | Drive the pointer at the target's own velocity as well as toward it. A purely proportional controller settles a fixed distance *behind* anything moving at a constant speed, which is why **Max speed** and **Accel limit** could never close the gap — they cap how fast it corrects, not how far behind it sits. 1.00 fully matches the target's speed. |
 | **Motion response** | How readily tracking opens up as the target moves. Higher = less lag on fast movement, at the cost of passing through more detection noise. |
 | **Jitter floor** | How hard a *stationary* target is filtered. Higher = calmer pointer at rest. Separated from Motion response so the two can be traded off independently rather than both riding on one slider. |
 | **Precision zone** | Within this many px of the target the pointer eases off and settles, instead of darting the last stretch and ringing around it. It fades out as the target starts moving, so it never holds the pointer back mid-chase. 0 = off. |
@@ -254,9 +258,9 @@ within which the tool offers guidance.
 | **Accel limit** | Caps how fast the pointer's own speed may change (px/s²), so a single bad detection frame can only ramp the pointer, never fling it. 0 = off. |
 | **Pointer calibration** | Windows scales relative mouse input by the pointer-speed setting (1/32× to 3.5×) and bends it further with "enhance pointer precision", which makes the scaling depend on how fast the pointer is already moving. The engine **reads both settings** and models the result as a curve rather than a single number — so the first move is already the right size at either extreme, and it keeps refining from what actually happens. The panel shows your Windows setting and how finely the pointer can be placed: at a high pointer speed one step of the mouse moves several pixels, and nothing can place it closer than that. **Extra gain** is a manual multiplier on top — raising it reaches further. |
 | **Click mode** | **Dwell** (click after resting on the target), **Key** (a chosen key issues the click), or **Off** (click manually). |
-| **Dwell time** | In dwell mode, how long to rest before a click is issued (50–1500 ms). |
+| **Dwell time** | In dwell mode, how long to rest before a click is issued (0–1500 ms). **0 clicks the moment the pointer arrives.** |
 | **Click key/button** | In key mode, what issues the click: a keyboard key, or a mouse button (RMB / MMB / side buttons) via quick-pick buttons — no need to record. |
-| **Click radius** | How close to the target counts as "on it" for dwell. |
+| **Click radius** | How close to the target counts as "on it" for dwell (3–200 px). Leaving takes a larger excursion than entering, so detection jitter cannot restart the timer — that hysteresis is why a dwell click used to take far longer than its setting, or never arrive. The panel shows the live pointer-to-target distance beside the radius, so a radius set too small to ever be satisfied is visible. |
 | **Higher click magnitude** | Issue clicks repeatedly while resting on the target — for users who can't click many times themselves. |
 | **Click interval** | Time between repeated clicks (30–1000 ms). |
 | **Assist radius** | Only guide toward colors within this distance of the pointer (0 = whole screen). |
@@ -378,6 +382,7 @@ mid-flight and throwing away the velocity the lead depends on.
 | `webserver.py` | Local HTTP server + JSON API for the web UI. |
 | `webpage.py` | The self-contained dark web control panel (HTML/CSS/JS). |
 | `gui.py` | Legacy Tkinter panel (`--tk`). |
+| `audio.py` | Cue tones synthesised in memory, so they have a volume control. |
 | `persistence.py` | Save/load settings to JSON, local config snapshots, and self-contained share codes. |
 
 ## Body-region heuristics

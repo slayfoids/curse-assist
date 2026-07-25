@@ -19,6 +19,7 @@ from ctypes import wintypes
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 
+from . import audio
 from . import persistence
 from . import __version__
 from .config import REGIONS, AppState, ColorTarget, tolerances_for
@@ -156,12 +157,13 @@ class WebApp:
                 self._shutdown.set()
 
     # -------------------------------------------------------------- helpers
+    def _volume(self) -> float:
+        if not self.state.get("audio_cues"):
+            return 0.0
+        return max(0, min(100, int(self.state.get("audio_volume")))) / 100.0
+
     def _beep(self) -> None:
-        try:
-            import winsound
-            winsound.Beep(880, 60)
-        except Exception:
-            pass
+        audio.cue_click(self._volume())
 
     def _set_pull(self, value: bool) -> None:
         """Single gateway for turning the pull on/off: state + audio cue.
@@ -179,19 +181,7 @@ class WebApp:
 
     def _pull_cue(self, on: bool) -> None:
         """Two high-pitched beeps when activated, two low-pitched when off."""
-        if not self.state.get("audio_cues"):
-            return
-        def _play():
-            try:
-                import time as _t
-                import winsound
-                freq = 1400 if on else 440
-                for _ in range(2):
-                    winsound.Beep(freq, 90)
-                    _t.sleep(0.045)
-            except Exception:
-                pass
-        threading.Thread(target=_play, name="pull-cue", daemon=True).start()
+        audio.cue_pull(on, self._volume())
 
     def _on_error(self, exc: Exception) -> None:
         self._last_error = str(exc)
@@ -458,6 +448,10 @@ class WebApp:
                 "target_ema": s.target_ema,
                 "motion_response": s.motion_response,
                 "jitter_floor": s.jitter_floor,
+                "aim_commit_px": s.aim_commit_px,
+                "velocity_follow": s.velocity_follow,
+                "audio_volume": s.audio_volume,
+                "click_distance": s.click_distance,
                 "precision_px": s.precision_px,
                 "precision_slow": s.precision_slow,
                 "max_accel": s.max_accel,
@@ -617,6 +611,11 @@ class WebApp:
         elif action == "record_hotkey":
             hk = self._record_hotkey(mouse_ok=bool(data.get("mouse")))
             return {"hotkey": hk}
+        elif action == "test_cue":
+            audio.preview(max(0, min(100,
+                                     int(self.state.get("audio_volume"))))
+                          / 100.0)
+            return {"ok": True}
         elif action == "eyedrop":
             self._start_eyedrop()
         elif action == "save_config":

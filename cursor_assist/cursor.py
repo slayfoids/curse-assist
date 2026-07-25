@@ -173,7 +173,8 @@ class CursorGlider:
              max_speed_px_s: float, lock_px: float = 2.0,
              max_accel_px_s2: float = 0.0,
              precision_px: float = 0.0, precision_slow: float = 1.0,
-             gain_scale: float = 1.0, auto_gain: bool = True
+             gain_scale: float = 1.0, auto_gain: bool = True,
+             target_vel: Tuple[float, float] = (0.0, 0.0)
              ) -> Tuple[int, int]:
         if auto_gain:
             self._curve.refresh()
@@ -211,6 +212,19 @@ class CursorGlider:
         alpha = 1.0 - math.exp(-dt / max(tau, 1e-3))
         sx = rx * alpha
         sy = ry * alpha
+
+        # Feed-forward: travel at the target's own speed as well as toward it.
+        #
+        # The term above is proportional to the *error*, and a proportional
+        # controller cannot sit on a moving target — it settles wherever the
+        # error is large enough to generate exactly the speed needed to keep
+        # up, which is a fixed distance behind. That distance does not depend
+        # on the speed or acceleration caps at all, which is why raising them
+        # never closed the gap. Matching the target's velocity removes the
+        # error rather than trading against it, and the proportional term is
+        # then left correcting only what feed-forward did not predict.
+        sx += target_vel[0] * dt
+        sy += target_vel[1] * dt
 
         # Cap by speed (px/sec) while preserving direction.
         max_step = max_speed_px_s * dt
@@ -266,6 +280,11 @@ class CursorGlider:
 
 # --- Dwell click ----------------------------------------------------------
 
+# How much further than the click radius the pointer must stray before a dwell
+# in progress is abandoned. See the note in `update`.
+EXIT_SLACK = 1.6
+
+
 class DwellClicker:
     """Fires a click once the cursor holds within ``radius`` of the target.
 
@@ -281,6 +300,16 @@ class DwellClicker:
         self._on_start = on_start
         self._on_fire = on_fire
         self._lost_at: Optional[float] = None   # when the target vanished
+        self._distance = 0.0                    # px to target, for the panel
+
+    @property
+    def distance(self) -> float:
+        """How far the pointer currently is from the target, in px.
+
+        Reported so a click radius set too small to ever be satisfied is
+        visible as a number rather than as "it just doesn't click sometimes".
+        """
+        return self._distance
 
     def reset(self) -> None:
         self._entered_at = None
@@ -333,7 +362,15 @@ class DwellClicker:
 
         dx = cursor_screen[0] - target_screen[0]
         dy = cursor_screen[1] - target_screen[1]
-        within = (dx * dx + dy * dy) <= radius * radius
+        dist2 = dx * dx + dy * dy
+        self._distance = math.sqrt(dist2)
+        # Hysteresis: it takes a bigger excursion to *leave* than to enter.
+        # Detection noise moves the aim point a few px many times a second, so
+        # a single threshold had the cursor crossing in and out of the radius
+        # constantly, restarting the timer each time — which is why a dwell
+        # click could take far longer than its setting or never arrive at all.
+        limit = radius if self._entered_at is None else radius * EXIT_SLACK
+        within = dist2 <= limit * limit
 
         if not within:
             # Left the radius: cancel timer and re-arm for the next approach.
@@ -346,7 +383,11 @@ class DwellClicker:
             self._entered_at = now
             if self._on_start:
                 self._on_start()
-            return False
+            # A zero dwell means "click as soon as you get there", so there is
+            # nothing to wait for — waiting even one frame is the difference
+            # between instant and not.
+            if dwell_ms > 0:
+                return False
 
         held_ms = (now - self._entered_at) * 1000.0
 

@@ -79,17 +79,20 @@ def test_idle_uses_its_own_slower_rate():
 
 
 def test_faster_scanning_does_not_make_tracking_worse():
-    """Raising the scan rate must not remove lead the pointer still needs.
+    """Raising the scan rate must improve tracking, or at worst not hurt it.
 
-    Most of the pipeline lag is fixed — smoothing and easing take the same time
-    however often the screen is scanned — so a lead weighted almost entirely on
-    the detection interval shrank as the rate rose and left tracking *worse* at
-    240 scans/s than at 60. The fixed term has to dominate.
+    It used to hurt: the compensation for pipeline lag was weighted almost
+    entirely on the detection interval, so scanning more often shrank it even
+    though most of the lag it was covering is fixed. That is now handled by
+    velocity feed-forward, which does not depend on the scan rate at all —
+    so what matters is that feed-forward is on by default, and that the
+    remaining lead is small enough not to fight it.
     """
     from cursor_assist import targeting as tg
-    slow = tg.LEAD_BASE + tg.LEAD_FRAMES / 60.0
-    fast = tg.LEAD_BASE + tg.LEAD_FRAMES / 240.0
-    assert fast >= 0.75 * slow, (slow, fast)
+    assert AppState().velocity_follow > 0.0
+    # The lead now covers detection staleness only: about half a scan interval.
+    assert tg.LEAD_BASE <= 0.02, tg.LEAD_BASE
+    assert tg.LEAD_FRAMES <= 1.0, tg.LEAD_FRAMES
 
 
 def test_display_refresh_detection_returns_something_usable():
