@@ -1,103 +1,106 @@
-# Curse v1.0.10
-
-**Body-part aiming rebuilt on the locked target, and two ways the pointer could
-be driven past the thing it was aiming at.**
+# Curse v1.0.10 — final release
 
 Download **`CursorAssist-v1.0.10.exe`** below. Single file, nothing to install —
-it carries its own Python, OpenCV and numpy. Windows 10/11, 64-bit.
+it carries its own Python, OpenCV and numpy. Windows 10/11, 64-bit. Existing
+settings carry over.
 
-Your existing settings carry over.
+This release closes out the work in 1.0.7 – 1.0.10. Everything below was
+measured before and after, against a simulation harness that runs the real
+engine.
 
 ---
 
-## 🧍 Body-part aiming was on a completely separate path
+## What changed across these four releases
 
-Everything fixed over the last three releases — the target lock, switch
-detection, straightness gating, aim lock-in, follow speed — lived in the colour
-tracking path. Body-part mode never went through any of it.
-
-Instead it took whichever colour blob was **largest that frame**, kept no lock,
-and never reported when it changed its mind. So with two people on screen the
-aim jumped to whoever was momentarily bigger — and because the switch was never
-declared, that jump was handed to the velocity estimate as though the target had
-sprinted across the screen:
-
-| scene | colour mode | body-part mode |
-|---|---|---|
-| two figures, peak pointer speed — **before** | 247 px/s | **4583 px/s** |
-| two figures, peak pointer speed — **now** | 220 px/s | **229 px/s** |
-
-It now runs the *same* selection as colour tracking and only then splits the
-chosen target into regions, so it finally inherits the lot.
-
-**A person is rarely one blob.** Different colours for hair and shirt, a dark
-strap across the chest, part of the body behind cover — every one of those
-arrives as separate pieces, and aiming at the biggest piece means aiming at
-whichever one happens to win this frame. Nearby pieces are now assembled into
-one figure — all of them still only the colours you picked, since nothing else
-can be in the mask — with a distance limit so somebody standing nearby is not
-absorbed into them.
-
-**Regions only use that figure's own pixels.** The head / torso / leg bands used
-to gather contour points from *every* shape on screen, so a second person
-overlapping a band pulled the aim toward themselves. The aim would sit between
-two people while reporting it was on one of their heads.
-
-A target too small to divide sensibly now falls back to aiming at the target
-itself, instead of inventing a "head" band across eight pixels.
-
-## ↔️ The pointer can't be pushed past what it's aiming at
-
-Two separate ways it could, both fixed:
-
-**Overshoot.** The catch-up push (proportional to how far off it is) and the
-keep-pace push (velocity feed-forward) are added together, and their sum can
-exceed the gap remaining. Overshooting puts the error on the *other* side, so
-the next tick drives back — that is an oscillation, and at a low smoothness
-setting there is almost nothing damping it. A step is now capped at the distance
-to the target, which makes overshoot arithmetically impossible and costs nothing
-during pursuit.
-
-**Standoff.** Worse and less obvious: feed-forward could push forward exactly as
-hard as the error pulled back, parking the pointer a fixed distance *ahead* of
-the target. With a wrong velocity estimate that measured **129 px past a
-stationary target** — and no single-step cap can prevent it, because every
-individual step is small and pointed the right way. Feed-forward now fades out
-as the pointer draws level, so it can only ever help it catch up.
-
-## 🎯 Aim lock-in now works on moving targets too
-
-It used to switch off entirely above a travel speed, on the grounds that a
-deadband would add tracking lag. That assumes detection noise stops when a
-target starts moving. It does not — if anything a moving figure detects worse.
-
-But the two are not alike: movement happens **along** a heading, while noise is
-scattered in every direction. So the along-track correction is followed
-outright, keeping tracking exact, and only the cross-track part is held.
-
-Engaging that needs the target to have genuinely *got somewhere*, measured over
-a window long enough to tell a sway from a journey — straightness is judged over
-about 80 ms, and a figure whose limbs swing through a one-second cycle looks
-perfectly straight over any 80 ms of it. A standing figure was registering as
-travelling and having its own swaying passed straight through.
-
-## 📊 Where tracking stands now
-
-Against the version you first reported these on:
+### Tracking
 
 | | before | now |
 |---|---|---|
 | lag behind a 200 px/s target | 11.1 px | **4.0 px** |
 | lag behind a 400 px/s target | 9.4 px | **5.3 px** |
 | lag behind a 700 px/s target | 8.7 px | **6.7 px** |
+| lag at 500 px/s, 240 scans/s | 12.3 px | **2.1 px** |
 | aim wander, still noisy figure | 9 px @ 20 changes/s | **1 px @ 1/s** |
-| body-part mode, two figures | 4583 px/s peak | **229 px/s** |
+| reaction to a target appearing elsewhere | 418 ms | **63 ms** |
+| travel wasted hunting, highest mouse sensitivity | 1.96× | **1.02×** |
+| resting jitter, lowest mouse sensitivity | 72.9 px | **0 px** |
+| body-part mode, two figures on screen | 4583 px/s peak | **229 px/s** |
 
-207 automated tests, up from 195.
+### The specific faults found
 
-## Upgrading
+- **Best-coverage snap** borrowed the field-of-view circle (250 px), so it
+  answered "where is this colour densest" about half the screen rather than
+  about the target. Two figures 220 px apart: the aim settled 47 px off the
+  locked one, and at some spacings landed between the two, on neither.
+- **The target lock's grace period** was the single largest source of latency in
+  the pipeline: when the locked blob missed a frame the aim kept pointing where
+  it used to be for 0.4 s. Frozen aim followed by a lurch is also exactly what
+  "spasming" looks like — the two complaints were one bug.
+- **A proportional controller cannot sit on a moving target.** It settles
+  wherever the error generates just enough speed to keep pace — a fixed distance
+  behind. **Max speed** and **Accel limit** cap how fast it corrects, not how far
+  behind it sits, which is why raising them never helped.
+- **Every filter keyed off speed**, and detection noise looks fast to all of
+  them. No combination of smoothness, steadiness, jitter floor or precision zone
+  got the aim wander below 6 px, because they were all adjusting the wrong
+  variable.
+- **Detection sensitivity above ~24 was unusable** — at 28 it matched 55% of the
+  screen across 606 blobs, and above 36 the target stopped being found at all.
+- **Body-part aiming ran down a completely separate path** and inherited none of
+  the above fixes.
+- **"Extra gain" was inverted** — the control labelled "raise this if it
+  under-reaches" made it under-reach further.
 
-Replace the exe; settings carry over. Nothing needs changing — if you had turned
-**Body-part detection** off because it was unusable, it is worth another look.
+### Added
+
+- **Drag-a-box detection area**, snipping-tool style, multi-monitor aware.
+- **Share codes** — a config as one pasteable string (269 characters for a
+  fully tuned setup), loadable on anyone else's install. No account, no server.
+- **Any mouse sensitivity** — reads Windows' pointer speed and acceleration
+  and models them as a curve, so the first move is the right size at 1/32× or
+  3.5×.
+- **Typable values and a recommended setting** on every control.
+- **Cue volume** with a test button.
+
+207 automated tests, up from 102.
+
+---
+
+## The honest limitation
+
+If it still feels like it lags, this is the part worth knowing, because no
+amount of further tuning changes it.
+
+The tool works by reading pixels off the screen. That imposes a floor:
+
+1. The app draws a frame. On a 60 Hz display that frame is on screen for
+   **16.7 ms**.
+2. Curse captures it — on average half a scan interval old (**~4 ms** at 120
+   scans/s).
+3. Detection, then the movement tick: **~5 ms**.
+4. The cursor moves — and you don't *see* it until the display draws its next
+   frame: **another 16.7 ms**.
+
+So the minimum round trip you can perceive is roughly **25–35 ms on a 60 Hz
+display**, and about two thirds of that is the display itself, not the software.
+Measured tracking lag is now 5.3 px at 400 px/s — that is **13 ms of target
+travel, less than a single display frame**. The pointer is closer to the target
+than one frame of your monitor can show.
+
+What that means practically:
+
+- **The largest remaining lever is your monitor.** A 120 Hz or 144 Hz panel
+  halves the two display terms above, and the scan rate follows it
+  automatically. That is a bigger improvement than anything left in the code.
+- **Anything reading the screen has this floor.** It is not specific to this
+  implementation; it is what "look at the screen, then move the pointer" costs.
+- If the requirement is to feel like there is no delay at all on a 60 Hz
+  display, screen capture is the wrong mechanism for it, and more tuning will
+  not get there. I would rather say that plainly than keep shipping
+  improvements against a target the approach cannot reach.
+
+The numbers above are real and reproducible from the test suite. Whether they
+add up to something useful for you is your call, and I would not argue with you
+if the answer is no.
 
 **Full detail:** [CHANGELOG.md](CHANGELOG.md)
