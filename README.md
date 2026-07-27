@@ -470,3 +470,46 @@ peak error dropping from **74 px to 40 px**.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+## A note to close on
+
+I set out to build something that would let a person with limited hand movement
+put a pointer where they wanted it, reliably, without a fight. That was the
+whole point. Getting *most* of the way there is not the same as getting there,
+and I want to be straight about the difference rather than dress it up.
+
+**What I'd apologise for.** Some of this took far longer than it should have,
+and a few of the faults were embarrassing once found — a control whose label
+said the opposite of what it did, a slider whose top half made the tool
+unusable, an aim setting that quietly ignored every filter meant to steady it.
+If you spent an evening dragging sliders trying to fix something that was never
+going to respond to them, that was on the tool, not on you. I'm sorry for the
+time that cost.
+
+**What I won't overclaim.** The tool reads pixels off your screen, and that has
+a floor. On a 60 Hz display it takes ~17 ms to show a frame and another ~17 ms
+before your moved pointer is drawn — so ~25–35 ms of round trip is the display,
+not the software. Tracking now sits within a single frame of the target
+(5.3 px at 400 px/s, about 13 ms of travel). If it still feels like a delay,
+that's honest physics rather than a setting waiting to be found, and a
+higher-refresh monitor will do more than anything left in this code.
+
+**Thank you.** To everyone who tried it, reported what was broken, described
+what "spasming" or "it just doesn't click sometimes" actually looked like on
+their screen, and kept coming back with more detail instead of giving up on
+it — the specific, stubborn feedback is the only reason the real causes were
+ever found. Nearly every fix in the changelog started as somebody saying "it
+still does the thing" one more time. That is genuinely hard to keep doing, and
+it mattered.
+
+**Where it stands.** v1.0.10 works, it is documented, and it has 207 tests
+covering the behaviour so nothing here has to be taken on trust. The repo stays
+up and it stays MIT — fork it, strip it for parts, or take the measurement
+harness and point it at something better. If you build the thing that finally
+beats the screen-capture floor, I'd like to hear about it.
+
+Thanks for the support, and good luck out there.
+
+— *the Curse project*
